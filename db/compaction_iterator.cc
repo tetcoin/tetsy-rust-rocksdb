@@ -36,11 +36,11 @@ CompactionIterator::CompactionIterator(
 
   if (snapshots_->size() == 0) {
     // optimize for fast path if there are no snapshots
-    visible_at_tip_ = last_sequence;
-    earliest_snapshot_ = visible_at_tip_;
+    visible_at_tip_ = true;
+    earliest_snapshot_ = last_sequence;
     latest_snapshot_ = 0;
   } else {
-    visible_at_tip_ = 0;
+    visible_at_tip_ = false;
     earliest_snapshot_ = snapshots_->at(0);
     latest_snapshot_ = snapshots_->back();
   }
@@ -90,7 +90,7 @@ void CompactionIterator::Next() {
       valid_ = true;
     } else {
       // We consumed all pinned merge operands, release pinned iterators
-      pinned_iters_mgr_.ReleasePinnedIterators();
+      pinned_iters_mgr_.ReleasePinnedData();
       // MergeHelper moves the iterator to the first record after the merged
       // records, so even though we reached the end of the merge output, we do
       // not want to advance the iterator.
@@ -210,8 +210,9 @@ void CompactionIterator::NextFromInput() {
     SequenceNumber last_snapshot = current_user_key_snapshot_;
     SequenceNumber prev_snapshot = 0;  // 0 means no previous snapshot
     current_user_key_snapshot_ =
-        visible_at_tip_ ? visible_at_tip_ : findEarliestVisibleSnapshot(
-                                                ikey_.sequence, &prev_snapshot);
+        visible_at_tip_
+            ? earliest_snapshot_
+            : findEarliestVisibleSnapshot(ikey_.sequence, &prev_snapshot);
 
     if (clear_and_output_next_key_) {
       // In the previous iteration we encountered a single delete that we could
@@ -254,6 +255,7 @@ void CompactionIterator::NextFromInput() {
       // those operations for a given key is documented as being undefined.  So
       // we can choose how to handle such a combinations of operations.  We will
       // try to compact out as much as we can in these cases.
+      // We will report counts on these anomalous cases.
 
       // The easiest way to process a SingleDelete during iteration is to peek
       // ahead at the next key.
@@ -276,6 +278,7 @@ void CompactionIterator::NextFromInput() {
             // First SingleDelete has been skipped since we already called
             // input_->Next().
             ++iter_stats_.num_record_drop_obsolete;
+            ++iter_stats_.num_single_del_mismatch;
           } else if ((ikey_.sequence <= earliest_write_conflict_snapshot_) ||
                      has_outputted_key_) {
             // Found a matching value, we can drop the single delete and the
@@ -285,7 +288,12 @@ void CompactionIterator::NextFromInput() {
 
             // Note: it doesn't matter whether the second key is a Put or if it
             // is an unexpected Merge or Delete.  We will compact it out
-            // either way.
+            // either way. We will maintain counts of how many mismatches
+            // happened
+            if (next_ikey.type != kTypeValue) {
+              ++iter_stats_.num_single_del_mismatch;
+            }
+
             ++iter_stats_.num_record_drop_hidden;
             ++iter_stats_.num_record_drop_obsolete;
             // Already called input_->Next() once.  Call it a second time to
@@ -326,6 +334,7 @@ void CompactionIterator::NextFromInput() {
           // Key doesn't exist outside of this range.
           // Can compact out this SingleDelete.
           ++iter_stats_.num_record_drop_obsolete;
+          ++iter_stats_.num_single_del_fallthru;
         } else {
           // Output SingleDelete
           valid_ = true;
@@ -404,7 +413,7 @@ void CompactionIterator::NextFromInput() {
         // batch consumed by the merge operator should not shadow any keys
         // coming after the merges
         has_current_user_key_ = false;
-        pinned_iters_mgr_.ReleasePinnedIterators();
+        pinned_iters_mgr_.ReleasePinnedData();
       }
     } else {
       valid_ = true;

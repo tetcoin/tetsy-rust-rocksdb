@@ -1193,7 +1193,7 @@ bool MinLevelToCompress(CompressionType& type, Options& options, int wbits,
     type = kXpressCompression;
     fprintf(stderr, "using xpress\n");
   } else if (ZSTD_Supported()) {
-    type = kZSTDNotFinalCompression;
+    type = kZSTD;
     fprintf(stderr, "using ZSTD\n");
   } else {
     fprintf(stderr, "skipping test, compression disabled\n");
@@ -2649,12 +2649,12 @@ class ModelDB : public DB {
   using DB::AddFile;
   virtual Status AddFile(ColumnFamilyHandle* column_family,
                          const std::vector<ExternalSstFileInfo>& file_info_list,
-                         bool move_file) override {
+                         bool move_file, bool skip_snapshot_check) override {
     return Status::NotSupported("Not implemented.");
   }
   virtual Status AddFile(ColumnFamilyHandle* column_family,
                          const std::vector<std::string>& file_path_list,
-                         bool move_file) override {
+                         bool move_file, bool skip_snapshot_check) override {
     return Status::NotSupported("Not implemented.");
   }
 
@@ -2762,6 +2762,12 @@ class ModelDB : public DB {
     return Status::NotSupported("Not supported operation.");
   }
 
+  virtual Status SetDBOptions(
+      const std::unordered_map<std::string, std::string>& new_options)
+      override {
+    return Status::NotSupported("Not supported operation.");
+  }
+
   using DB::CompactFiles;
   virtual Status CompactFiles(const CompactionOptions& compact_options,
                               ColumnFamilyHandle* column_family,
@@ -2806,13 +2812,12 @@ class ModelDB : public DB {
   virtual Env* GetEnv() const override { return nullptr; }
 
   using DB::GetOptions;
-  virtual const Options& GetOptions(
-      ColumnFamilyHandle* column_family) const override {
+  virtual Options GetOptions(ColumnFamilyHandle* column_family) const override {
     return options_;
   }
 
   using DB::GetDBOptions;
-  virtual const DBOptions& GetDBOptions() const override { return options_; }
+  virtual DBOptions GetDBOptions() const override { return options_; }
 
   using DB::Flush;
   virtual Status Flush(const rocksdb::FlushOptions& options,
@@ -2881,6 +2886,10 @@ class ModelDB : public DB {
     }
     virtual void Seek(const Slice& k) override {
       iter_ = map_->lower_bound(k.ToString());
+    }
+    virtual void SeekForPrev(const Slice& k) override {
+      iter_ = map_->upper_bound(k.ToString());
+      Prev();
     }
     virtual void Next() override { ++iter_; }
     virtual void Prev() override {
@@ -4271,10 +4280,8 @@ TEST_F(DBTest, DynamicCompactionOptions) {
   options.level0_file_num_compaction_trigger = 3;
   options.level0_slowdown_writes_trigger = 4;
   options.level0_stop_writes_trigger = 8;
-  options.max_grandparent_overlap_factor = 10;
-  options.expanded_compaction_factor = 25;
-  options.source_compaction_factor = 1;
   options.target_file_size_base = k64KB;
+  options.max_compaction_bytes = options.target_file_size_base * 10;
   options.target_file_size_multiplier = 1;
   options.max_bytes_for_level_base = k128KB;
   options.max_bytes_for_level_multiplier = 4;
@@ -4710,7 +4717,7 @@ TEST_F(DBTest, CompressionStatsTest) {
     type = kXpressCompression;
     fprintf(stderr, "using xpress\n");
   } else if (ZSTD_Supported()) {
-    type = kZSTDNotFinalCompression;
+    type = kZSTD;
     fprintf(stderr, "using ZSTD\n");
   } else {
     fprintf(stderr, "skipping test, compression disabled\n");
@@ -4720,7 +4727,7 @@ TEST_F(DBTest, CompressionStatsTest) {
   Options options = CurrentOptions();
   options.compression = type;
   options.statistics = rocksdb::CreateDBStatistics();
-  options.statistics->stats_level_ = StatsLevel::kAll;
+  options.statistics->stats_level_ = StatsLevel::kExceptTimeForMutex;
   DestroyAndReopen(options);
 
   int kNumKeysWritten = 100000;
@@ -5023,7 +5030,7 @@ TEST_F(DBTest, SuggestCompactRangeTest) {
   options.compression = kNoCompression;
   options.max_bytes_for_level_base = 450 << 10;
   options.target_file_size_base = 98 << 10;
-  options.max_grandparent_overlap_factor = 1 << 20;  // inf
+  options.max_compaction_bytes = static_cast<uint64_t>(1) << 60;  // inf
 
   Reopen(options);
 

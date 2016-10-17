@@ -43,6 +43,7 @@ using rocksdb::CompactionFilterContext;
 using rocksdb::CompactionOptionsFIFO;
 using rocksdb::Comparator;
 using rocksdb::CompressionType;
+using rocksdb::WALRecoveryMode;
 using rocksdb::DB;
 using rocksdb::DBOptions;
 using rocksdb::Env;
@@ -123,6 +124,7 @@ struct rocksdb_compactionfilter_t : public CompactionFilter {
       char** new_value, size_t *new_value_length,
       unsigned char* value_changed);
   const char* (*name_)(void*);
+  unsigned char ignore_snapshots_;
 
   virtual ~rocksdb_compactionfilter_t() {
     (*destructor_)(state_);
@@ -148,6 +150,8 @@ struct rocksdb_compactionfilter_t : public CompactionFilter {
   }
 
   virtual const char* Name() const override { return (*name_)(state_); }
+
+  virtual bool IgnoreSnapshots() const override { return ignore_snapshots_; }
 };
 
 struct rocksdb_compactionfilterfactory_t : public CompactionFilterFactory {
@@ -1512,14 +1516,9 @@ void rocksdb_options_set_max_bytes_for_level_multiplier(
   opt->rep.max_bytes_for_level_multiplier = n;
 }
 
-void rocksdb_options_set_expanded_compaction_factor(
-    rocksdb_options_t* opt, int n) {
-  opt->rep.expanded_compaction_factor = n;
-}
-
-void rocksdb_options_set_max_grandparent_overlap_factor(
-    rocksdb_options_t* opt, int n) {
-  opt->rep.max_grandparent_overlap_factor = n;
+void rocksdb_options_set_max_compaction_bytes(rocksdb_options_t* opt,
+                                              uint64_t n) {
+  opt->rep.max_compaction_bytes = n;
 }
 
 void rocksdb_options_set_max_bytes_for_level_multiplier_additional(
@@ -1555,6 +1554,10 @@ void rocksdb_options_set_level0_stop_writes_trigger(
 
 void rocksdb_options_set_max_mem_compaction_level(rocksdb_options_t* opt,
                                                   int n) {}
+
+void rocksdb_options_set_wal_recovery_mode(rocksdb_options_t* opt,int mode) {
+  opt->rep.wal_recovery_mode = static_cast<WALRecoveryMode>(mode);
+}
 
 void rocksdb_options_set_compression(rocksdb_options_t* opt, int t) {
   opt->rep.compression = static_cast<CompressionType>(t);
@@ -1775,21 +1778,12 @@ void rocksdb_options_set_delete_obsolete_files_period_micros(
   opt->rep.delete_obsolete_files_period_micros = v;
 }
 
-void rocksdb_options_set_source_compaction_factor(
-    rocksdb_options_t* opt, int n) {
-  opt->rep.expanded_compaction_factor = n;
-}
-
 void rocksdb_options_prepare_for_bulk_load(rocksdb_options_t* opt) {
   opt->rep.PrepareForBulkLoad();
 }
 
 void rocksdb_options_set_memtable_vector_rep(rocksdb_options_t *opt) {
-  static rocksdb::VectorRepFactory* factory = 0;
-  if (!factory) {
-    factory = new rocksdb::VectorRepFactory;
-  }
-  opt->rep.memtable_factory.reset(factory);
+  opt->rep.memtable_factory.reset(new rocksdb::VectorRepFactory);
 }
 
 void rocksdb_options_set_memtable_prefix_bloom_size_ratio(
@@ -1805,36 +1799,26 @@ void rocksdb_options_set_memtable_huge_page_size(rocksdb_options_t* opt,
 void rocksdb_options_set_hash_skip_list_rep(
     rocksdb_options_t *opt, size_t bucket_count,
     int32_t skiplist_height, int32_t skiplist_branching_factor) {
-  static rocksdb::MemTableRepFactory* factory = 0;
-  if (!factory) {
-    factory = rocksdb::NewHashSkipListRepFactory(
-        bucket_count, skiplist_height, skiplist_branching_factor);
-  }
+  rocksdb::MemTableRepFactory* factory = rocksdb::NewHashSkipListRepFactory(
+      bucket_count, skiplist_height, skiplist_branching_factor);
   opt->rep.memtable_factory.reset(factory);
 }
 
 void rocksdb_options_set_hash_link_list_rep(
     rocksdb_options_t *opt, size_t bucket_count) {
-  static rocksdb::MemTableRepFactory* factory = 0;
-  if (!factory) {
-    factory = rocksdb::NewHashLinkListRepFactory(bucket_count);
-  }
-  opt->rep.memtable_factory.reset(factory);
+  opt->rep.memtable_factory.reset(rocksdb::NewHashLinkListRepFactory(bucket_count));
 }
 
 void rocksdb_options_set_plain_table_factory(
     rocksdb_options_t *opt, uint32_t user_key_len, int bloom_bits_per_key,
     double hash_table_ratio, size_t index_sparseness) {
-  static rocksdb::TableFactory* factory = 0;
-  if (!factory) {
-    rocksdb::PlainTableOptions options;
-    options.user_key_len = user_key_len;
-    options.bloom_bits_per_key = bloom_bits_per_key;
-    options.hash_table_ratio = hash_table_ratio;
-    options.index_sparseness = index_sparseness;
+  rocksdb::PlainTableOptions options;
+  options.user_key_len = user_key_len;
+  options.bloom_bits_per_key = bloom_bits_per_key;
+  options.hash_table_ratio = hash_table_ratio;
+  options.index_sparseness = index_sparseness;
 
-    factory = rocksdb::NewPlainTableFactory(options);
-  }
+  rocksdb::TableFactory* factory = rocksdb::NewPlainTableFactory(options);
   opt->rep.table_factory.reset(factory);
 }
 
@@ -1919,8 +1903,15 @@ rocksdb_compactionfilter_t* rocksdb_compactionfilter_create(
   result->state_ = state;
   result->destructor_ = destructor;
   result->filter_ = filter;
+  result->ignore_snapshots_ = false;
   result->name_ = name;
   return result;
+}
+
+void rocksdb_compactionfilter_set_ignore_snapshots(
+  rocksdb_compactionfilter_t* filter,
+  unsigned char whether_ignore) {
+  filter->ignore_snapshots_ = whether_ignore;
 }
 
 void rocksdb_compactionfilter_destroy(rocksdb_compactionfilter_t* filter) {

@@ -1,13 +1,23 @@
 # Rocksdb Change Log
-## 4.11.2 (9/15/2016)
-### Bug fixes
-* Segfault when failing to open an SST file for read-ahead iterators.
-* WAL without data for all CFs is not deleted after recovery.
+## Unreleased
+### Public API Change
+* DB::GetOptions() reflect dynamic changed options (i.e. through DB::SetOptions()) and return copy of options instead of reference.
+* Added Statistics::getAndResetTickerCount().
 
-## 4.11.1 (8/30/2016)
-### Bug Fixes
-* Mitigate the regression bug of deadlock condition during recovery when options.max_successive_merges hits.
-* Fix data race condition related to hash index in block based table when putting indexes in the block cache.
+### New Features
+* Add DB::SetDBOptions() to dynamic change base_background_compactions and max_background_compactions.
+
+## 4.12.0 (9/12/2016)
+### Public API Change
+* CancelAllBackgroundWork() flushes all memtables for databases containing writes that have bypassed the WAL (writes issued with WriteOptions::disableWAL=true) before shutting down background threads.
+* Merge options source_compaction_factor, max_grandparent_overlap_bytes and expanded_compaction_factor into max_compaction_bytes.
+* Remove ImmutableCFOptions.
+* Add a compression type ZSTD, which can work with ZSTD 0.8.0 or up. Still keep ZSTDNotFinal for compatibility reasons.
+
+### New Features
+* Introduce NewClockCache, which is based on CLOCK algorithm with better concurrent performance in some cases. It can be used to replace the default LRU-based block cache and table cache. To use it, RocksDB need to be linked with TBB lib.
+* Change ticker/histogram statistics implementations to accumulate data in thread-local storage, which improves CPU performance by reducing cache coherency costs. Callers of CreateDBStatistics do not need to change anything to use this feature.
+* Block cache mid-point insertion, where index and filter block are inserted into LRU block cache with higher priority. The feature can be enabled by setting BlockBasedTableOptions::cache_index_and_filter_blocks_with_high_priority to true and high_pri_pool_ratio > 0 when creating NewLRUCache.
 
 ## 4.11.0 (8/1/2016)
 ### Public API Change

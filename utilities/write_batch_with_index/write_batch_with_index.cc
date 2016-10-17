@@ -66,6 +66,13 @@ class BaseDeltaIterator : public Iterator {
     UpdateCurrent();
   }
 
+  void SeekForPrev(const Slice& k) override {
+    forward_ = false;
+    base_iterator_->SeekForPrev(k);
+    delta_iterator_->SeekForPrev(k);
+    UpdateCurrent();
+  }
+
   void Next() override {
     if (!Valid()) {
       status_ = Status::NotSupported("Next() on invalid iterator");
@@ -334,6 +341,11 @@ class WBWIIteratorImpl : public WBWIIterator {
     skip_list_iter_.Seek(&search_entry);
   }
 
+  virtual void SeekForPrev(const Slice& key) override {
+    WriteBatchIndexEntry search_entry(&key, column_family_id_);
+    skip_list_iter_.SeekForPrev(&search_entry);
+  }
+
   virtual void Next() override { skip_list_iter_.Next(); }
 
   virtual void Prev() override { skip_list_iter_.Prev(); }
@@ -349,7 +361,8 @@ class WBWIIteratorImpl : public WBWIIterator {
         iter_entry->offset, &ret.type, &ret.key, &ret.value, &blob, &xid);
     assert(s.ok());
     assert(ret.type == kPutRecord || ret.type == kDeleteRecord ||
-           ret.type == kSingleDeleteRecord || ret.type == kMergeRecord);
+           ret.type == kSingleDeleteRecord || ret.type == kDeleteRangeRecord ||
+           ret.type == kMergeRecord);
     return ret;
   }
 
@@ -626,6 +639,21 @@ void WriteBatchWithIndex::SingleDelete(const Slice& key) {
   rep->SetLastEntryOffset();
   rep->write_batch.SingleDelete(key);
   rep->AddOrUpdateIndex(key);
+}
+
+void WriteBatchWithIndex::DeleteRange(ColumnFamilyHandle* column_family,
+                                      const Slice& begin_key,
+                                      const Slice& end_key) {
+  rep->SetLastEntryOffset();
+  rep->write_batch.DeleteRange(column_family, begin_key, end_key);
+  rep->AddOrUpdateIndex(column_family, begin_key);
+}
+
+void WriteBatchWithIndex::DeleteRange(const Slice& begin_key,
+                                      const Slice& end_key) {
+  rep->SetLastEntryOffset();
+  rep->write_batch.DeleteRange(begin_key, end_key);
+  rep->AddOrUpdateIndex(begin_key);
 }
 
 void WriteBatchWithIndex::Merge(ColumnFamilyHandle* column_family,

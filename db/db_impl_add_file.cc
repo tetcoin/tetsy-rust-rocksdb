@@ -22,21 +22,6 @@
 
 namespace rocksdb {
 
-namespace {
-// RAII Timer
-class StatsTimer {
- public:
-  explicit StatsTimer(Env* env, uint64_t* counter)
-      : env_(env), counter_(counter), start_micros_(env_->NowMicros()) {}
-  ~StatsTimer() { *counter_ += env_->NowMicros() - start_micros_; }
-
- private:
-  Env* env_;
-  uint64_t* counter_;
-  uint64_t start_micros_;
-};
-}  // anonymous namespace
-
 #ifndef ROCKSDB_LITE
 
 Status DBImpl::ReadExternalSstFileInfo(ColumnFamilyHandle* column_family,
@@ -120,14 +105,13 @@ Status DBImpl::ReadExternalSstFileInfo(ColumnFamilyHandle* column_family,
 
 Status DBImpl::AddFile(ColumnFamilyHandle* column_family,
                        const std::vector<std::string>& file_path_list,
-                       bool move_file) {
+                       bool move_file, bool skip_snapshot_check) {
   Status status;
   auto num_files = file_path_list.size();
   if (num_files == 0) {
     return Status::InvalidArgument("The list of files is empty");
   }
 
-  std::vector<ExternalSstFileInfo> file_infos(num_files);
   std::vector<ExternalSstFileInfo> file_info_list(num_files);
   for (size_t i = 0; i < num_files; i++) {
     status = ReadExternalSstFileInfo(column_family, file_path_list[i],
@@ -136,15 +120,16 @@ Status DBImpl::AddFile(ColumnFamilyHandle* column_family,
       return status;
     }
   }
-  return AddFile(column_family, file_info_list, move_file);
+  return AddFile(column_family, file_info_list, move_file, skip_snapshot_check);
 }
 
 Status DBImpl::AddFile(ColumnFamilyHandle* column_family,
                        const std::vector<ExternalSstFileInfo>& file_info_list,
-                       bool move_file) {
+                       bool move_file, bool skip_snapshot_check) {
   Status status;
   auto cfh = reinterpret_cast<ColumnFamilyHandleImpl*>(column_family);
   ColumnFamilyData* cfd = cfh->cfd();
+  const Comparator* user_cmp = cfd->internal_comparator().user_comparator();
 
   auto num_files = file_info_list.size();
   if (num_files == 0) {
@@ -158,19 +143,17 @@ Status DBImpl::AddFile(ColumnFamilyHandle* column_family,
       sorted_file_info_list[i] = &file_info_list[i];
     }
 
-    auto* vstorage = cfd->current()->storage_info();
-    std::sort(
-        sorted_file_info_list.begin(), sorted_file_info_list.end(),
-        [&vstorage, &file_info_list](const ExternalSstFileInfo* info1,
-                                     const ExternalSstFileInfo* info2) {
-          return vstorage->InternalComparator()->user_comparator()->Compare(
-                     info1->smallest_key, info2->smallest_key) < 0;
-        });
+    std::sort(sorted_file_info_list.begin(), sorted_file_info_list.end(),
+              [&user_cmp, &file_info_list](const ExternalSstFileInfo* info1,
+                                           const ExternalSstFileInfo* info2) {
+                return user_cmp->Compare(info1->smallest_key,
+                                         info2->smallest_key) < 0;
+              });
 
     for (size_t i = 0; i < num_files - 1; i++) {
-      if (sorted_file_info_list[i]->largest_key >=
-          sorted_file_info_list[i + 1]->smallest_key) {
-        return Status::NotSupported("Cannot add overlapping range among files");
+      if (user_cmp->Compare(sorted_file_info_list[i]->largest_key,
+                            sorted_file_info_list[i + 1]->smallest_key) >= 0) {
+        return Status::NotSupported("Files have overlapping ranges");
       }
     }
   }
@@ -178,7 +161,7 @@ Status DBImpl::AddFile(ColumnFamilyHandle* column_family,
   std::vector<uint64_t> micro_list(num_files, 0);
   std::vector<FileMetaData> meta_list(num_files);
   for (size_t i = 0; i < num_files; i++) {
-    StatsTimer t(env_, &micro_list[i]);
+    StopWatch sw(env_, nullptr, 0, &micro_list[i], false);
     if (file_info_list[i].num_entries == 0) {
       return Status::InvalidArgument("File contain no entries");
     }
@@ -212,7 +195,7 @@ Status DBImpl::AddFile(ColumnFamilyHandle* column_family,
   {
     InstrumentedMutexLock l(&mutex_);
     for (size_t i = 0; i < num_files; i++) {
-      StatsTimer t(env_, &micro_list[i]);
+      StopWatch sw(env_, nullptr, 0, &micro_list[i], false);
       pending_outputs_inserted_elem_list[i] =
           CaptureCurrentFileNumberInPendingOutputs();
       meta_list[i].fd = FileDescriptor(versions_->NewFileNumber(), 0,
@@ -224,10 +207,10 @@ Status DBImpl::AddFile(ColumnFamilyHandle* column_family,
   std::vector<std::string> db_fname_list(num_files);
   size_t j = 0;
   for (; j < num_files; j++) {
-    StatsTimer t(env_, &micro_list[j]);
+    StopWatch sw(env_, nullptr, 0, &micro_list[j], false);
     db_fname_list[j] =
-        TableFileName(db_options_.db_paths, meta_list[j].fd.GetNumber(),
-                      meta_list[j].fd.GetPathId());
+        TableFileName(immutable_db_options_.db_paths,
+                      meta_list[j].fd.GetNumber(), meta_list[j].fd.GetPathId());
     if (move_file) {
       status = env_->LinkFile(file_info_list[j].file_path, db_fname_list[j]);
       if (status.IsNotSupported()) {
@@ -243,7 +226,7 @@ Status DBImpl::AddFile(ColumnFamilyHandle* column_family,
       for (size_t i = 0; i < j; i++) {
         Status s = env_->DeleteFile(db_fname_list[i]);
         if (!s.ok()) {
-          Log(InfoLogLevel::WARN_LEVEL, db_options_.info_log,
+          Log(InfoLogLevel::WARN_LEVEL, immutable_db_options_.info_log,
               "AddFile() clean up for file %s failed : %s",
               db_fname_list[i].c_str(), s.ToString().c_str());
         }
@@ -254,13 +237,17 @@ Status DBImpl::AddFile(ColumnFamilyHandle* column_family,
 
   {
     InstrumentedMutexLock l(&mutex_);
+    TEST_SYNC_POINT("DBImpl::AddFile:MutexLock");
+
     const MutableCFOptions mutable_cf_options =
         *cfd->GetLatestMutableCFOptions();
 
     WriteThread::Writer w;
     write_thread_.EnterUnbatched(&w, &mutex_);
 
-    if (!snapshots_.empty()) {
+    num_running_addfile_++;
+
+    if (!skip_snapshot_check && !snapshots_.empty()) {
       // Check that no snapshots are being held
       status =
           Status::NotSupported("Cannot add a file while holding snapshots");
@@ -275,18 +262,17 @@ Status DBImpl::AddFile(ColumnFamilyHandle* column_family,
       ScopedArenaIterator iter(NewInternalIterator(ro, cfd, sv, &arena));
 
       for (size_t i = 0; i < num_files; i++) {
-        StatsTimer t(env_, &micro_list[i]);
+        StopWatch sw(env_, nullptr, 0, &micro_list[i], false);
         InternalKey range_start(file_info_list[i].smallest_key,
-                                kMaxSequenceNumber, kTypeValue);
+                                kMaxSequenceNumber, kValueTypeForSeek);
         iter->Seek(range_start.Encode());
         status = iter->status();
 
         if (status.ok() && iter->Valid()) {
           ParsedInternalKey seek_result;
           if (ParseInternalKey(iter->key(), &seek_result)) {
-            auto* vstorage = cfd->current()->storage_info();
-            if (vstorage->InternalComparator()->user_comparator()->Compare(
-                    seek_result.user_key, file_info_list[i].largest_key) <= 0) {
+            if (user_cmp->Compare(seek_result.user_key,
+                                  file_info_list[i].largest_key) <= 0) {
               status = Status::NotSupported("Cannot add overlapping range");
               break;
             }
@@ -298,14 +284,13 @@ Status DBImpl::AddFile(ColumnFamilyHandle* column_family,
       }
     }
 
-    // The level the file will be ingested into
+    // The levels that the files will be ingested into
     std::vector<int> target_level_list(num_files, 0);
     if (status.ok()) {
-      // Add files to L0
       VersionEdit edit;
       edit.SetColumnFamily(cfd->GetID());
       for (size_t i = 0; i < num_files; i++) {
-        StatsTimer t(env_, &micro_list[i]);
+        StopWatch sw(env_, nullptr, 0, &micro_list[i], false);
         // Add file to the lowest possible level
         target_level_list[i] = PickLevelForIngestedFile(cfd, file_info_list[i]);
         edit.AddFile(target_level_list[i], meta_list[i].fd.GetNumber(),
@@ -322,27 +307,54 @@ Status DBImpl::AddFile(ColumnFamilyHandle* column_family,
     if (status.ok()) {
       delete InstallSuperVersionAndScheduleWork(cfd, nullptr,
                                                 mutable_cf_options);
+
+      // Update internal stats for new ingested files
+      uint64_t total_keys = 0;
+      uint64_t total_l0_files = 0;
+      for (size_t i = 0; i < num_files; i++) {
+        InternalStats::CompactionStats stats(1);
+        stats.micros = micro_list[i];
+        stats.bytes_written = meta_list[i].fd.GetFileSize();
+        stats.num_output_files = 1;
+        cfd->internal_stats()->AddCompactionStats(target_level_list[i], stats);
+        cfd->internal_stats()->AddCFStats(
+            InternalStats::BYTES_INGESTED_ADD_FILE,
+            meta_list[i].fd.GetFileSize());
+        total_keys += file_info_list[i].num_entries;
+        if (target_level_list[i] == 0) {
+          total_l0_files += 1;
+        }
+        Log(InfoLogLevel::INFO_LEVEL, immutable_db_options_.info_log,
+            "[AddFile] External SST file %s was ingested in L%d with path %s\n",
+            file_info_list[i].file_path.c_str(), target_level_list[i],
+            db_fname_list[i].c_str());
+      }
+      cfd->internal_stats()->AddCFStats(InternalStats::INGESTED_NUM_KEYS_TOTAL,
+                                        total_keys);
+      cfd->internal_stats()->AddCFStats(InternalStats::INGESTED_NUM_FILES_TOTAL,
+                                        num_files);
+      cfd->internal_stats()->AddCFStats(
+          InternalStats::INGESTED_LEVEL0_NUM_FILES_TOTAL, total_l0_files);
     }
+
     for (size_t i = 0; i < num_files; i++) {
-      // Update internal stats
-      InternalStats::CompactionStats stats(1);
-      stats.micros = micro_list[i];
-      stats.bytes_written = meta_list[i].fd.GetFileSize();
-      stats.num_output_files = 1;
-      cfd->internal_stats()->AddCompactionStats(target_level_list[i], stats);
-      cfd->internal_stats()->AddCFStats(InternalStats::BYTES_INGESTED_ADD_FILE,
-                                        meta_list[i].fd.GetFileSize());
       ReleaseFileNumberFromPendingOutputs(
           pending_outputs_inserted_elem_list[i]);
     }
-  }
+
+    num_running_addfile_--;
+    if (num_running_addfile_ == 0) {
+      bg_cv_.SignalAll();
+    }
+    TEST_SYNC_POINT("DBImpl::AddFile:MutexUnlock");
+  }  // mutex_ is unlocked here;
 
   if (!status.ok()) {
     // We failed to add the files to the database
     for (size_t i = 0; i < num_files; i++) {
       Status s = env_->DeleteFile(db_fname_list[i]);
       if (!s.ok()) {
-        Log(InfoLogLevel::WARN_LEVEL, db_options_.info_log,
+        Log(InfoLogLevel::WARN_LEVEL, immutable_db_options_.info_log,
             "AddFile() clean up for file %s failed : %s",
             db_fname_list[i].c_str(), s.ToString().c_str());
       }
@@ -352,7 +364,7 @@ Status DBImpl::AddFile(ColumnFamilyHandle* column_family,
     for (size_t i = 0; i < num_files; i++) {
       Status s = env_->DeleteFile(file_info_list[i].file_path);
       if (!s.ok()) {
-        Log(InfoLogLevel::WARN_LEVEL, db_options_.info_log,
+        Log(InfoLogLevel::WARN_LEVEL, immutable_db_options_.info_log,
             "%s was added to DB successfully but failed to remove original "
             "file "
             "link : %s",
@@ -370,49 +382,33 @@ int DBImpl::PickLevelForIngestedFile(ColumnFamilyData* cfd,
 
   int target_level = 0;
   auto* vstorage = cfd->current()->storage_info();
-  auto* ucmp = vstorage->InternalComparator()->user_comparator();
-
   Slice file_smallest_user_key(file_info.smallest_key);
   Slice file_largest_user_key(file_info.largest_key);
 
   for (int lvl = cfd->NumberLevels() - 1; lvl >= vstorage->base_level();
        lvl--) {
+    // Make sure that the file fits in Level `lvl` and dont overlap with
+    // the output of any compaction running right now.
     if (vstorage->OverlapInLevel(lvl, &file_smallest_user_key,
-                                 &file_largest_user_key) == false) {
-      // Make sure that the file dont overlap with the output of any
-      // compaction running right now
-      Slice compaction_smallest_user_key;
-      Slice compaction_largest_user_key;
-      bool overlap_with_compaction_output = false;
-      for (Compaction* c : running_compactions_) {
-        if (c->column_family_data()->GetID() != cfd->GetID() ||
-            c->output_level() != lvl) {
-          continue;
-        }
-
-        compaction_smallest_user_key = c->GetSmallestUserKey();
-        compaction_largest_user_key = c->GetLargestUserKey();
-
-        if (ucmp->Compare(file_smallest_user_key,
-                          compaction_largest_user_key) <= 0 &&
-            ucmp->Compare(file_largest_user_key,
-                          compaction_smallest_user_key) >= 0) {
-          overlap_with_compaction_output = true;
-          break;
-        }
-      }
-
-      if (overlap_with_compaction_output == false) {
-        // Level lvl is the lowest level that dont have any files with key
-        // range overlapping with our file key range and no compactions
-        // planning to add overlapping files in it.
-        target_level = lvl;
-        break;
-      }
+                                 &file_largest_user_key) == false &&
+        cfd->RangeOverlapWithCompaction(file_smallest_user_key,
+                                        file_largest_user_key, lvl) == false) {
+      // Level lvl is the lowest level that dont have any files with key
+      // range overlapping with our file key range and no compactions
+      // planning to add overlapping files in it.
+      target_level = lvl;
+      break;
     }
   }
 
   return target_level;
+}
+
+void DBImpl::WaitForAddFile() {
+  mutex_.AssertHeld();
+  while (num_running_addfile_ > 0) {
+    bg_cv_.Wait();
+  }
 }
 #endif  // ROCKSDB_LITE
 

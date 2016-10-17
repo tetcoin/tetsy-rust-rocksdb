@@ -557,9 +557,9 @@ TEST_F(DBPropertiesTest, NumImmutableMemTable) {
     ASSERT_EQ(num, "3");
     ASSERT_TRUE(dbfull()->GetProperty(
         handles_[1], "rocksdb.cur-size-active-mem-table", &num));
-    // "192" is the size of the metadata of an empty skiplist, this would
-    // break if we change the default skiplist implementation
-    ASSERT_EQ(num, "192");
+    // "384" is the size of the metadata of two empty skiplists, this would
+    // break if we change the default vectorrep/skiplist implementation
+    ASSERT_EQ(num, "384");
 
     uint64_t int_num;
     uint64_t base_total_size;
@@ -594,7 +594,8 @@ TEST_F(DBPropertiesTest, NumImmutableMemTable) {
   } while (ChangeCompactOptions());
 }
 
-TEST_F(DBPropertiesTest, GetProperty) {
+// TODO(techdept) : Disabled flaky test #12863555
+TEST_F(DBPropertiesTest, DISABLED_GetProperty) {
   // Set sizes to both background thread pool to be 1 and block them.
   env_->SetBackgroundThreads(1, Env::HIGH);
   env_->SetBackgroundThreads(1, Env::LOW);

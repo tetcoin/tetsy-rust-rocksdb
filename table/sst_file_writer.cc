@@ -75,7 +75,7 @@ struct SstFileWriter::Rep {
       const Comparator* _user_comparator)
       : env_options(_env_options),
         ioptions(options),
-        mutable_cf_options(options, ioptions),
+        mutable_cf_options(options),
         internal_comparator(_user_comparator) {}
 
   std::unique_ptr<WritableFileWriter> file_writer;
@@ -117,14 +117,25 @@ Status SstFileWriter::Open(const std::string& file_path) {
 
   std::vector<std::unique_ptr<IntTblPropCollectorFactory>>
       int_tbl_prop_collector_factories;
+
+  // SstFileWriter properties collector to add SstFileWriter version.
   int_tbl_prop_collector_factories.emplace_back(
       new SstFileWriterPropertiesCollectorFactory(1 /* version */));
 
+  // User collector factories
+  auto user_collector_factories =
+      r->ioptions.table_properties_collector_factories;
+  for (size_t i = 0; i < user_collector_factories.size(); i++) {
+    int_tbl_prop_collector_factories.emplace_back(
+        new UserKeyTablePropertiesCollectorFactory(
+            user_collector_factories[i]));
+  }
+  int unknown_level = -1;
   TableBuilderOptions table_builder_options(
       r->ioptions, r->internal_comparator, &int_tbl_prop_collector_factories,
       compression_type, r->ioptions.compression_opts,
       nullptr /* compression_dict */, false /* skip_filters */,
-      r->column_family_name);
+      r->column_family_name, unknown_level);
   r->file_writer.reset(
       new WritableFileWriter(std::move(sst_file), r->env_options));
   r->builder.reset(r->ioptions.table_factory->NewTableBuilder(

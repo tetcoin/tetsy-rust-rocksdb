@@ -15,7 +15,6 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
-#include "rocksdb/immutable_options.h"
 #include "rocksdb/iterator.h"
 #include "rocksdb/listener.h"
 #include "rocksdb/metadata.h"
@@ -77,6 +76,9 @@ class ColumnFamilyHandle {
   //
   // Note that this function is not supported in RocksDBLite.
   virtual Status GetDescriptor(ColumnFamilyDescriptor* desc) = 0;
+  // Returns the comparator of the column family associated with the
+  // current handle.
+  virtual const Comparator* GetComparator() const = 0;
 };
 
 static const int kMajorVersion = __ROCKSDB_MAJOR__;
@@ -627,6 +629,9 @@ class DB {
     return SetOptions(DefaultColumnFamily(), new_options);
   }
 
+  virtual Status SetDBOptions(
+      const std::unordered_map<std::string, std::string>& new_options) = 0;
+
   // CompactFiles() inputs a list of files specified by file numbers and
   // compacts them to the specified level. Note that the behavior is different
   // from CompactRange() in that CompactFiles() performs the compaction job
@@ -694,13 +699,12 @@ class DB {
   // column family, the options provided when calling DB::Open() or
   // DB::CreateColumnFamily() will have been "sanitized" and transformed
   // in an implementation-defined manner.
-  virtual const Options& GetOptions(ColumnFamilyHandle* column_family)
-      const = 0;
-  virtual const Options& GetOptions() const {
+  virtual Options GetOptions(ColumnFamilyHandle* column_family) const = 0;
+  virtual Options GetOptions() const {
     return GetOptions(DefaultColumnFamily());
   }
 
-  virtual const DBOptions& GetDBOptions() const = 0;
+  virtual DBOptions GetDBOptions() const = 0;
 
   // Flush all mem-table data.
   virtual Status Flush(const FlushOptions& options,
@@ -803,22 +807,24 @@ class DB {
   // "column_family", a vector of  ExternalSstFileInfo can be used
   // instead of "file_path_list" to do a blind batch add that wont
   // need to read the file, move_file can be set to true to
-  // move the files instead of copying them.
+  // move the files instead of copying them, skip_snapshot_check can be set to
+  // true to ignore the snapshot, make sure that you know that when you use it,
+  // snapshots see the data that is added in the new files.
   //
   // Current Requirements:
   // (1) The key ranges of the files don't overlap with each other
-  // (1) The key range of any file in list doesn't overlap with
+  // (2) The key range of any file in list doesn't overlap with
   //     existing keys or tombstones in DB.
-  // (2) No snapshots are held.
+  // (3) No snapshots are held (check skip_snapshot_check to skip this check).
   //
   // Notes: We will try to ingest the files to the lowest possible level
   //        even if the file compression dont match the level compression
   virtual Status AddFile(ColumnFamilyHandle* column_family,
                          const std::vector<std::string>& file_path_list,
-                         bool move_file = false) = 0;
+                         bool move_file = false, bool skip_snapshot_check = false) = 0;
   virtual Status AddFile(const std::vector<std::string>& file_path_list,
-                         bool move_file = false) {
-    return AddFile(DefaultColumnFamily(), file_path_list, move_file);
+                         bool move_file = false, bool skip_snapshot_check = false) {
+    return AddFile(DefaultColumnFamily(), file_path_list, move_file, skip_snapshot_check);
   }
 #if defined(__GNUC__) || defined(__clang__)
   __attribute__((__deprecated__))
@@ -827,9 +833,9 @@ class DB {
 #endif
   virtual Status
   AddFile(ColumnFamilyHandle* column_family, const std::string& file_path,
-          bool move_file = false) {
+          bool move_file = false, bool skip_snapshot_check = false) {
     return AddFile(column_family, std::vector<std::string>(1, file_path),
-                   move_file);
+                   move_file, skip_snapshot_check);
   }
 #if defined(__GNUC__) || defined(__clang__)
   __attribute__((__deprecated__))
@@ -837,18 +843,18 @@ class DB {
   __declspec(deprecated)
 #endif
   virtual Status
-  AddFile(const std::string& file_path, bool move_file = false) {
+  AddFile(const std::string& file_path, bool move_file = false, bool skip_snapshot_check = false) {
     return AddFile(DefaultColumnFamily(),
-                   std::vector<std::string>(1, file_path), move_file);
+                   std::vector<std::string>(1, file_path), move_file, skip_snapshot_check);
   }
 
   // Load table file with information "file_info" into "column_family"
   virtual Status AddFile(ColumnFamilyHandle* column_family,
                          const std::vector<ExternalSstFileInfo>& file_info_list,
-                         bool move_file = false) = 0;
+                         bool move_file = false, bool skip_snapshot_check = false) = 0;
   virtual Status AddFile(const std::vector<ExternalSstFileInfo>& file_info_list,
-                         bool move_file = false) {
-    return AddFile(DefaultColumnFamily(), file_info_list, move_file);
+                         bool move_file = false, bool skip_snapshot_check = false) {
+    return AddFile(DefaultColumnFamily(), file_info_list, move_file, skip_snapshot_check);
   }
 #if defined(__GNUC__) || defined(__clang__)
   __attribute__((__deprecated__))
@@ -857,9 +863,9 @@ class DB {
 #endif
   virtual Status
   AddFile(ColumnFamilyHandle* column_family,
-          const ExternalSstFileInfo* file_info, bool move_file = false) {
+          const ExternalSstFileInfo* file_info, bool move_file = false, bool skip_snapshot_check = false) {
     return AddFile(column_family,
-                   std::vector<ExternalSstFileInfo>(1, *file_info), move_file);
+                   std::vector<ExternalSstFileInfo>(1, *file_info), move_file, skip_snapshot_check);
   }
 #if defined(__GNUC__) || defined(__clang__)
   __attribute__((__deprecated__))
@@ -867,9 +873,9 @@ class DB {
   __declspec(deprecated)
 #endif
   virtual Status
-  AddFile(const ExternalSstFileInfo* file_info, bool move_file = false) {
+  AddFile(const ExternalSstFileInfo* file_info, bool move_file = false, bool skip_snapshot_check = false) {
     return AddFile(DefaultColumnFamily(),
-                   std::vector<ExternalSstFileInfo>(1, *file_info), move_file);
+                   std::vector<ExternalSstFileInfo>(1, *file_info), move_file, skip_snapshot_check);
   }
 
 #endif  // ROCKSDB_LITE

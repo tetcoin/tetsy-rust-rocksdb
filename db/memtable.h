@@ -15,17 +15,16 @@
 #include <string>
 #include <vector>
 #include "db/dbformat.h"
+#include "db/memtable_allocator.h"
 #include "db/skiplist.h"
 #include "db/version_edit.h"
 #include "rocksdb/db.h"
 #include "rocksdb/env.h"
 #include "rocksdb/memtablerep.h"
-#include "rocksdb/immutable_options.h"
-#include "db/memtable_allocator.h"
+#include "util/cf_options.h"
 #include "util/concurrent_arena.h"
 #include "util/dynamic_bloom.h"
 #include "util/instrumented_mutex.h"
-#include "util/mutable_cf_options.h"
 
 namespace rocksdb {
 
@@ -158,6 +157,9 @@ class MemTable {
   //        Calling ~Iterator of the iterator will destroy all the states but
   //        those allocated in arena.
   InternalIterator* NewIterator(const ReadOptions& read_options, Arena* arena);
+
+  InternalIterator* NewRangeTombstoneIterator(const ReadOptions& read_options,
+                                              Arena* arena);
 
   // Add an entry into memtable that maps key to value at the
   // specified sequence number and with the specified type.
@@ -345,6 +347,7 @@ class MemTable {
   ConcurrentArena arena_;
   MemTableAllocator allocator_;
   unique_ptr<MemTableRep> table_;
+  unique_ptr<MemTableRep> range_del_table_;
 
   // Total data size of all data inserted
   std::atomic<uint64_t> data_size_;

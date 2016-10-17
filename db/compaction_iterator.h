@@ -34,6 +34,10 @@ struct CompactionIteratorStats {
   uint64_t num_input_corrupt_records = 0;
   uint64_t total_input_raw_key_bytes = 0;
   uint64_t total_input_raw_value_bytes = 0;
+
+  // Single-Delete diagnostics for exceptional situations
+  uint64_t num_single_del_fallthru = 0;
+  uint64_t num_single_del_mismatch = 0;
 };
 
 class CompactionIterator {
@@ -100,7 +104,7 @@ class CompactionIterator {
   LogBuffer* log_buffer_;
   bool bottommost_level_;
   bool valid_ = false;
-  SequenceNumber visible_at_tip_;
+  bool visible_at_tip_;
   SequenceNumber earliest_snapshot_;
   SequenceNumber latest_snapshot_;
   bool ignore_snapshots_;

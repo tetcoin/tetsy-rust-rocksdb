@@ -64,6 +64,11 @@ pub type DBSliceTransform = *const DBSliceTransformOpaque;
 pub const BLOCK_BASED_INDEX_TYPE_BINARY_SEARCH: c_int = 0;
 pub const BLOCK_BASED_INDEX_TYPE_HASH_SEARCH: c_int = 1;
 
+pub const WAL_RECOVERY_MODE_TOLERATE_CORRUPTED_RECORDS: c_int = 0;
+pub const WAL_RECOVERY_MODE_ABSOLUTE_CONSISTENCY: c_int = 1;
+pub const WAL_RECOVERY_MODE_POINT_IN_TIME_CONSISTENCY: c_int = 2;
+pub const WAL_RECOVERY_MODE_SKIP_ANY_CORRUPTED_RECORD: c_int = 3;
+
 pub fn new_bloom_filter(bits: c_int) -> DBFilterPolicy {
     unsafe { rocksdb_filterpolicy_create_bloom(bits) }
 }
@@ -159,6 +164,8 @@ extern "C" {
                                                         bits: c_int);
     pub fn rocksdb_options_set_max_write_buffer_number(options: DBOptions,
                                                        bufno: c_int);
+	pub fn rocksdb_options_set_wal_recovery_mode(options: DBOptions,
+													   mode: c_int);
     pub fn rocksdb_options_set_min_write_buffer_number_to_merge(
         options: DBOptions, bufno: c_int);
     pub fn rocksdb_options_set_level0_file_num_compaction_trigger(

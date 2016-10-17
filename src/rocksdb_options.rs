@@ -27,6 +27,13 @@ pub enum IndexType {
 	HashSearch,
 }
 
+pub enum WalRecoveryMode {
+	TolerateCorruptedTailRecords,
+	AbsoluteConsistency,
+	PointInTimeConsistency,
+	SkipAnyCorruptedRecord,
+}
+
 pub struct BlockBasedOptions {
     inner: rocksdb_ffi::DBBlockBasedTableOptions,
 }
@@ -356,6 +363,18 @@ impl Options {
                                          factory: &BlockBasedOptions) {
         unsafe {
             rocksdb_ffi::rocksdb_options_set_block_based_table_factory(self.inner, factory.inner);
+        }
+    }
+
+    pub fn set_wal_recovery_mode(&mut self, mode: WalRecoveryMode) {
+		let m = match mode {
+			WalRecoveryMode::TolerateCorruptedTailRecords => rocksdb_ffi::WAL_RECOVERY_MODE_TOLERATE_CORRUPTED_RECORDS,
+			WalRecoveryMode::AbsoluteConsistency => rocksdb_ffi::WAL_RECOVERY_MODE_ABSOLUTE_CONSISTENCY,
+			WalRecoveryMode::PointInTimeConsistency => rocksdb_ffi::WAL_RECOVERY_MODE_POINT_IN_TIME_CONSISTENCY,
+			WalRecoveryMode::SkipAnyCorruptedRecord => rocksdb_ffi::WAL_RECOVERY_MODE_SKIP_ANY_CORRUPTED_RECORD,
+		};
+        unsafe {
+            rocksdb_ffi::rocksdb_options_set_wal_recovery_mode(self.inner, m);
         }
     }
 

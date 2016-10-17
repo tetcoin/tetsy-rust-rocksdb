@@ -221,7 +221,7 @@ class SpecialEnv : public EnvWrapper {
           // Drop writes on the floor
           return Status::OK();
         } else if (env_->no_space_.load(std::memory_order_acquire)) {
-          return Status::IOError("No space left on device");
+          return Status::NoSpace("No space left on device");
         } else {
           env_->bytes_written_ += data.size();
           return base_->Append(data);
@@ -310,7 +310,18 @@ class SpecialEnv : public EnvWrapper {
         return s;
       }
       Status Truncate(uint64_t size) override { return base_->Truncate(size); }
-      Status Close() override { return base_->Close(); }
+      Status Close() override {
+// SyncPoint is not supported in Released Windows Mode.
+#if !(defined NDEBUG) || !defined(OS_WIN)
+        // Check preallocation size
+        // preallocation size is never passed to base file.
+        size_t preallocation_size = preallocation_block_size();
+        TEST_SYNC_POINT_CALLBACK("DBTestWalFile.GetPreallocationStatus",
+                                 &preallocation_size);
+#endif  // !(defined NDEBUG) || !defined(OS_WIN)
+
+        return base_->Close();
+      }
       Status Flush() override { return base_->Flush(); }
       Status Sync() override {
         ++env_->sync_counter_;
@@ -810,7 +821,8 @@ class DBTestBase : public testing::Test {
 
   std::vector<std::uint64_t> ListTableFiles(Env* env, const std::string& path);
 
-  void VerifyDBFromMap(std::map<std::string, std::string> true_data);
+  void VerifyDBFromMap(std::map<std::string, std::string> true_data,
+                       size_t* total_reads_res = nullptr);
 
 #ifndef ROCKSDB_LITE
   Status GenerateAndAddExternalFile(const Options options,

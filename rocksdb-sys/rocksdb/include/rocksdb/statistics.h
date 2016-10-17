@@ -39,6 +39,8 @@ enum Tickers : uint32_t {
   BLOCK_CACHE_INDEX_MISS,
   // # of times cache hit when accessing index block from block cache.
   BLOCK_CACHE_INDEX_HIT,
+  // # of index blocks added to block cache.
+  BLOCK_CACHE_INDEX_ADD,
   // # of bytes of index blocks inserted into cache
   BLOCK_CACHE_INDEX_BYTES_INSERT,
   // # of bytes of index block erased from cache
@@ -47,6 +49,8 @@ enum Tickers : uint32_t {
   BLOCK_CACHE_FILTER_MISS,
   // # of times cache hit when accessing filter block from block cache.
   BLOCK_CACHE_FILTER_HIT,
+  // # of filter blocks added to block cache.
+  BLOCK_CACHE_FILTER_ADD,
   // # of bytes of bloom filter blocks inserted into cache
   BLOCK_CACHE_FILTER_BYTES_INSERT,
   // # of bytes of bloom filter block erased from cache
@@ -55,6 +59,10 @@ enum Tickers : uint32_t {
   BLOCK_CACHE_DATA_MISS,
   // # of times cache hit when accessing data block from block cache.
   BLOCK_CACHE_DATA_HIT,
+  // # of data blocks added to block cache.
+  BLOCK_CACHE_DATA_ADD,
+  // # of bytes of data blocks inserted into cache
+  BLOCK_CACHE_DATA_BYTES_INSERT,
   // # of bytes read from cache.
   BLOCK_CACHE_BYTES_READ,
   // # of bytes written into cache.
@@ -67,6 +75,11 @@ enum Tickers : uint32_t {
   PERSISTENT_CACHE_HIT,
   // # persistent cache miss
   PERSISTENT_CACHE_MISS,
+
+  // # total simulation block cache hits
+  SIM_BLOCK_CACHE_HIT,
+  // # total simulation block cache misses
+  SIM_BLOCK_CACHE_MISS,
 
   // # of memtable hits.
   MEMTABLE_HIT,
@@ -192,6 +205,14 @@ enum Tickers : uint32_t {
   ROW_CACHE_HIT,
   ROW_CACHE_MISS,
 
+  // Read amplification statistics.
+  // Read amplification can be calculated using this formula
+  // (READ_AMP_TOTAL_READ_BYTES / READ_AMP_ESTIMATE_USEFUL_BYTES)
+  //
+  // REQUIRES: ReadOptions::read_amp_bytes_per_bit to be enabled
+  READ_AMP_ESTIMATE_USEFUL_BYTES,  // Estimate of total bytes actually used.
+  READ_AMP_TOTAL_READ_BYTES,       // Total size of loaded data blocks.
+
   TICKER_ENUM_MAX
 };
 
@@ -204,20 +225,26 @@ const std::vector<std::pair<Tickers, std::string>> TickersNameMap = {
     {BLOCK_CACHE_ADD_FAILURES, "rocksdb.block.cache.add.failures"},
     {BLOCK_CACHE_INDEX_MISS, "rocksdb.block.cache.index.miss"},
     {BLOCK_CACHE_INDEX_HIT, "rocksdb.block.cache.index.hit"},
+    {BLOCK_CACHE_INDEX_ADD, "rocksdb.block.cache.index.add"},
     {BLOCK_CACHE_INDEX_BYTES_INSERT, "rocksdb.block.cache.index.bytes.insert"},
     {BLOCK_CACHE_INDEX_BYTES_EVICT, "rocksdb.block.cache.index.bytes.evict"},
     {BLOCK_CACHE_FILTER_MISS, "rocksdb.block.cache.filter.miss"},
     {BLOCK_CACHE_FILTER_HIT, "rocksdb.block.cache.filter.hit"},
+    {BLOCK_CACHE_FILTER_ADD, "rocksdb.block.cache.filter.add"},
     {BLOCK_CACHE_FILTER_BYTES_INSERT,
      "rocksdb.block.cache.filter.bytes.insert"},
     {BLOCK_CACHE_FILTER_BYTES_EVICT, "rocksdb.block.cache.filter.bytes.evict"},
     {BLOCK_CACHE_DATA_MISS, "rocksdb.block.cache.data.miss"},
     {BLOCK_CACHE_DATA_HIT, "rocksdb.block.cache.data.hit"},
+    {BLOCK_CACHE_DATA_ADD, "rocksdb.block.cache.data.add"},
+    {BLOCK_CACHE_DATA_BYTES_INSERT, "rocksdb.block.cache.data.bytes.insert"},
     {BLOCK_CACHE_BYTES_READ, "rocksdb.block.cache.bytes.read"},
     {BLOCK_CACHE_BYTES_WRITE, "rocksdb.block.cache.bytes.write"},
     {BLOOM_FILTER_USEFUL, "rocksdb.bloom.filter.useful"},
     {PERSISTENT_CACHE_HIT, "rocksdb.persistent.cache.hit"},
     {PERSISTENT_CACHE_MISS, "rocksdb.persistent.cache.miss"},
+    {SIM_BLOCK_CACHE_HIT, "rocksdb.sim.block.cache.hit"},
+    {SIM_BLOCK_CACHE_MISS, "rocksdb.sim.block.cache.miss"},
     {MEMTABLE_HIT, "rocksdb.memtable.hit"},
     {MEMTABLE_MISS, "rocksdb.memtable.miss"},
     {GET_HIT_L0, "rocksdb.l0.hit"},
@@ -284,6 +311,8 @@ const std::vector<std::pair<Tickers, std::string>> TickersNameMap = {
     {FILTER_OPERATION_TOTAL_TIME, "rocksdb.filter.operation.time.nanos"},
     {ROW_CACHE_HIT, "rocksdb.row.cache.hit"},
     {ROW_CACHE_MISS, "rocksdb.row.cache.miss"},
+    {READ_AMP_ESTIMATE_USEFUL_BYTES, "rocksdb.read.amp.estimate.useful.bytes"},
+    {READ_AMP_TOTAL_READ_BYTES, "rocksdb.read.amp.total.read.bytes"},
 };
 
 /**
@@ -376,12 +405,12 @@ struct HistogramData {
 };
 
 enum StatsLevel {
+  // Collect all stats except time inside mutex lock AND time spent on
+  // compression.
+  kExceptDetailedTimers,
   // Collect all stats except the counters requiring to get time inside the
   // mutex lock.
   kExceptTimeForMutex,
-  // Collect all stats expect time inside mutex lock AND time spent on
-  // compression
-  kExceptDetailedTimers,
   // Collect all stats, including measuring duration of mutex operations.
   // If getting time is expensive on the platform to run, it can
   // reduce scalability to more threads, especially for writes.
@@ -399,6 +428,7 @@ class Statistics {
   virtual std::string getHistogramString(uint32_t type) const { return ""; }
   virtual void recordTick(uint32_t tickerType, uint64_t count = 0) = 0;
   virtual void setTickerCount(uint32_t tickerType, uint64_t count) = 0;
+  virtual uint64_t getAndResetTickerCount(uint32_t tickerType) = 0;
   virtual void measureTime(uint32_t histogramType, uint64_t time) = 0;
 
   // String representation of the statistic object.
@@ -412,7 +442,7 @@ class Statistics {
     return type < HISTOGRAM_ENUM_MAX;
   }
 
-  StatsLevel stats_level_ = kExceptTimeForMutex;
+  StatsLevel stats_level_ = kExceptDetailedTimers;
 };
 
 // Create a concrete DBStatistics object

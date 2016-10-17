@@ -25,6 +25,7 @@ function postURL($diffID, $url) {
   $cmd = 'echo \'{"diff_id": "' . $diffID . '", '
          . '"name":"click here for sandcastle tests for D' . $diffID . '", '
          . '"link":"' . $url . '"}\' | '
+         . 'no_proxy=facebook.com,tfbnw.net,fb.com '
          . 'http_proxy=fwdproxy.any.facebook.com:8080 '
          . 'https_proxy=fwdproxy.any.facebook.com:8080 arc call-conduit '
          . 'differential.updateunitresults';
@@ -40,6 +41,7 @@ function buildUpdateTestStatusCmd($diffID, $test, $status) {
   $cmd = 'echo \'{"diff_id": "' . $diffID . '", '
          . '"name":"' . $test . '", '
          . '"result":"' . $status . '"}\' | '
+         . 'no_proxy=facebook.com,tfbnw.net,fb.com '
          . 'http_proxy=fwdproxy.any.facebook.com:8080 '
          . 'https_proxy=fwdproxy.any.facebook.com:8080 arc call-conduit '
          . 'differential.updateunitresults';
@@ -62,7 +64,9 @@ function getSteps($applyDiff, $diffID, $username, $test) {
     assert(strlen($diffID) > 0);
     assert(is_numeric($diffID));
 
-    $arcrc_content = exec("cat ~/.arcrc | gzip -f | base64 -w0");
+    $arcrc_content = (PHP_OS == "Darwin" ?
+        exec("cat ~/.arcrc | gzip -f | base64") :
+            exec("cat ~/.arcrc | gzip -f | base64 -w0"));
     assert(strlen($arcrc_content) > 0);
 
     // Sandcastle machines don't have arc setup. We copy the user certificate
@@ -104,7 +108,8 @@ function getSteps($applyDiff, $diffID, $username, $test) {
     // Patch the code (keep your fingures crossed).
     $patch = array(
       "name" => "Patch " . $diffID,
-      "shell" => "HTTPS_PROXY=fwdproxy:8080 arc --arcrc-file ~/.arcrc "
+      "shell" => "no_proxy=facebook.com,tfbnw.net,fb.com "
+                  ."HTTPS_PROXY=fwdproxy:8080 arc --arcrc-file ~/.arcrc "
                   . "patch --nocommit --diff " . $diffID,
       "user" => "root"
     );
@@ -126,9 +131,24 @@ function getSteps($applyDiff, $diffID, $username, $test) {
                 . "; ";
   }
 
+  // shell command to sort the tests based on exit code and print
+  // the output of the log files.
+  $cat_sorted_logs = "
+    while read code log_file;
+      do echo \"################ cat \$log_file [exit_code : \$code] ################\";
+      cat \$log_file;
+    done < <(tail -n +2 LOG | sort -k7,7n -k4,4gr | awk '{print \$7,\$NF}')";
+
+  // Shell command to cat all log files
+  $cat_all_logs = "for f in `ls t/!(run-*)`; do echo \$f;cat \$f; done";
+
+  // If LOG file exist use it to cat log files sorted by exit code, otherwise
+  // cat everything
+  $logs_cmd = "if [ -f LOG ]; then {$cat_sorted_logs}; else {$cat_all_logs}; fi";
+
   $cmd = $cmd . " cat /tmp/precommit-check.log"
-           . "; for f in `ls t/log-*`; do echo \$f; cat \$f; done;"
-           . "[[ \$exit_code -eq 0 ]]";
+              . "; shopt -s extglob; {$logs_cmd}"
+              . "; shopt -u extglob; [[ \$exit_code -eq 0 ]]";
   assert(strlen($cmd) > 0);
 
   $run_test = array(
@@ -166,6 +186,14 @@ function getSandcastleConfig() {
   } else {
     // This is a typical `[p]arc diff` case. Fetch the values from the specific
     // configuration files.
+    for ($i = 0; $i < 50; $i++) {
+      if (file_exists(PRIMARY_TOKEN_FILE) ||
+          file_exists(SECONDARY_TOKEN_FILE)) {
+        break;
+      }
+      // If we failed to fetch the tokens, sleep for 0.2 second and try again
+      usleep(200000);
+    }
     assert(file_exists(PRIMARY_TOKEN_FILE) ||
            file_exists(SECONDARY_TOKEN_FILE));
 
@@ -214,21 +242,11 @@ function getSandcastleConfig() {
     assert(is_numeric($diffID));
   }
 
-  if (strcmp(getenv("ROCKSDB_CHECK_ALL"), 1) == 0) {
-    // Extract all tests from the CI definition.
-    $output = file_get_contents("build_tools/rocksdb-lego-determinator");
-    assert(strlen($output) > 0);
-
-    preg_match_all('/[ ]{2}([a-zA-Z0-9_]+)[\)]{1}/', $output, $matches);
-    $tests = $matches[1];
-    assert(count($tests) > 0);
-  } else {
-    // Manually list of tests we want to run in Sandcastle.
-    $tests = array(
-      "unit", "unit_non_shm", "unit_481", "clang_unit", "tsan", "asan",
-      "lite_test", "valgrind", "release", "release_481", "clang_release"
-    );
-  }
+  // List of tests we want to run in Sandcastle.
+  $tests = array("unit", "unit_non_shm", "unit_481", "clang_unit", "tsan",
+                 "asan", "lite_test", "valgrind", "release", "release_481",
+                 "clang_release", "punit", "clang_analyze", "code_cov",
+                 "java_build", "no_compression", "unity", "ubsan");
 
   $send_email_template = array(
     'type' => 'email',
@@ -257,7 +275,9 @@ function getSandcastleConfig() {
   // execute. Why compress the job definitions? Otherwise we run over the max
   // string size.
   $cmd = "echo " . base64_encode(json_encode($arg))
-         . " | gzip -f | base64 -w0";
+         . (PHP_OS == "Darwin" ?
+             " | gzip -f | base64" :
+                 " | gzip -f | base64 -w0");
   assert(strlen($cmd) > 0);
 
   $arg_encoded = shell_exec($cmd);

@@ -163,7 +163,8 @@ fn main() {
 	config.file("rocksdb/util/iostats_context.cc");
 	config.file("rocksdb/util/lru_cache.cc");
 	config.file("rocksdb/util/sharded_cache.cc");
-	config.file("rocksdb/util/threadpool.cc");
+	config.file("rocksdb/util/threadpool_imp.cc");
+	config.file("rocksdb/util/db_options.cc");
 	config.file("rocksdb/utilities/backupable/backupable_db.cc");
 	config.file("rocksdb/utilities/convenience/info_log_finder.cc");
 	config.file("rocksdb/utilities/checkpoint/checkpoint.cc");
@@ -195,12 +196,13 @@ fn main() {
 	config.file("rocksdb/utilities/ttl/db_ttl_impl.cc");
 	config.file("rocksdb/utilities/write_batch_with_index/write_batch_with_index.cc");
 	config.file("rocksdb/utilities/write_batch_with_index/write_batch_with_index_internal.cc");
+	config.file("rocksdb/util/cf_options.cc");
 	config.file("rocksdb/util/event_logger.cc");
 	config.file("rocksdb/util/log_buffer.cc");
 	config.file("rocksdb/util/logging.cc");
 	config.file("rocksdb/util/memenv.cc");
 	config.file("rocksdb/util/murmurhash.cc");
-	config.file("rocksdb/util/mutable_cf_options.cc");
+	//config.file("rocksdb/util/mutable_cf_options.cc");
 	config.file("rocksdb/util/options.cc");
 	config.file("rocksdb/util/options_helper.cc");
 	config.file("rocksdb/util/options_parser.cc");

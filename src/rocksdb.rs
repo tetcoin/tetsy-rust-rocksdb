@@ -28,6 +28,8 @@ use self::libc::size_t;
 use rocksdb_ffi::{self, DBCFHandle, error_message};
 use rocksdb_options::{Options, WriteOptions};
 
+use local_encoding::{Encoding, Encoder};
+
 pub struct DB {
     inner: rocksdb_ffi::DBInstance,
     cfs: BTreeMap<String, DBCFHandle>,
@@ -276,7 +278,8 @@ impl DB {
     	if cfs.len() != cf_opts.len() {
 			return Err(format!("Mismatching number of CF options"));
 		}
-        let cpath = match CString::new(path.as_bytes()) {
+        let encoded_path = Encoding::ANSI.to_bytes(path);
+        let cpath = match CString::new(encoded_path.unwrap()) {
             Ok(c) => c,
             Err(_) => {
                 return Err("Failed to convert path to CString when opening \
@@ -378,7 +381,8 @@ impl DB {
     }
 
     pub fn destroy(opts: &Options, path: &str) -> Result<(), String> {
-        let cpath = CString::new(path.as_bytes()).unwrap();
+        let encoded_path = Encoding::ANSI.to_bytes(path);
+        let cpath = CString::new(encoded_path.unwrap()).unwrap();
         let cpath_ptr = cpath.as_ptr();
 
         let mut err: *const i8 = 0 as *const i8;
@@ -395,7 +399,8 @@ impl DB {
     }
 
     pub fn repair(opts: &Options, path: &str) -> Result<(), String> {
-        let cpath = CString::new(path.as_bytes()).unwrap();
+        let encoded_path = Encoding::ANSI.to_bytes(path);
+        let cpath = CString::new(encoded_path.unwrap()).unwrap();
         let cpath_ptr = cpath.as_ptr();
 
         let mut err: *const i8 = 0 as *const i8;
@@ -518,7 +523,8 @@ impl DB {
                      name: &str,
                      opts: &Options)
                      -> Result<Column, String> {
-        let cname = match CString::new(name.as_bytes()) {
+        let encoded_name = Encoding::ANSI.to_bytes(name);
+        let cname = match CString::new(encoded_name.unwrap()) {
             Ok(c) => c,
             Err(_) => {
                 return Err("Failed to convert path to CString when opening \

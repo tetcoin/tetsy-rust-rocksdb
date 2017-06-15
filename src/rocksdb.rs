@@ -1031,6 +1031,19 @@ fn iterator_test() {
 }
 
 #[test]
+fn non_unicode_path_test() {
+    let path = "путь_не_юникод/_rust_rocksdb_unicodetest";
+    {
+        let db = DB::open_default(path).unwrap();
+        assert!(db.put(b"my key", b"my value").is_ok());
+        assert!(db.delete(b"my key").is_ok());
+    }
+    let opts = Options::new();
+    assert!(DB::destroy(&opts, path).is_ok());
+}
+
+
+#[test]
 fn snapshot_test() {
     let path = "_rust_rocksdb_snapshottest";
     {

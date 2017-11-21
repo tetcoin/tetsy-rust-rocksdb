@@ -105,6 +105,12 @@ pub fn error_message(ptr: *const i8) -> String {
     s
 }
 
+// link snappy statically here to solve parity linking issues
+// https://gitlab.parity.io/parity/parity/-/jobs/70812
+#[link(name = "snappy", kind = "static")]
+extern {
+}
+
 // TODO audit the use of boolean arguments, b/c I think they need to be u8
 // instead...
 #[link(name = "rocksdb")]

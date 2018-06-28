@@ -58,6 +58,13 @@ fn main() {
 		config.flag("-EHsc");
 	}
 
+	if cfg!(feature = "sse42") {
+		config.define("HAVE_SSE42", Some("1"));
+		if !cfg!(target_env = "msvc") {
+			config.flag("-msse4.2");
+		}
+	}
+
 	config.file("rocksdb/cache/clock_cache.cc");
 	config.file("rocksdb/cache/lru_cache.cc");
 	config.file("rocksdb/cache/sharded_cache.cc");

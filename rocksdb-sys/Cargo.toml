@@ -17,7 +17,7 @@ default = []
 [dependencies]
 libc = "0.2"
 local-encoding = "0.2.0"
-snappy-sys = { git = "https://github.com/paritytech/rust-snappy" }
+snappy-sys = { git = "https://github.com/paritytech/rust-snappy", branch = "andre/use-cmake" }
 
 [build-dependencies]
 cmake = "0.1"

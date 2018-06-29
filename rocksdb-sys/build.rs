@@ -17,7 +17,6 @@ fn main() {
 	let mut config = cc::Build::new();
 	config.include("rocksdb/include/");
 	config.include("rocksdb/");
-	config.include("snappy/");
 	config.include(".");
 
 	config.define("NDEBUG", Some("1"));

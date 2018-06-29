@@ -73,7 +73,7 @@ struct Deleter {
 std::unique_ptr<char, Deleter> NewAligned(const size_t size, const char ch) {
   char* ptr = nullptr;
 #ifdef OS_WIN
-  if (!(ptr = reinterpret_cast<char*>(_aligned_malloc(size, kPageSize)))) {
+  if (nullptr == (ptr = reinterpret_cast<char*>(_aligned_malloc(size, kPageSize)))) {
     return std::unique_ptr<char, Deleter>(nullptr, Deleter(_aligned_free));
   }
   std::unique_ptr<char, Deleter> uptr(ptr, Deleter(_aligned_free));
@@ -135,6 +135,37 @@ TEST_F(EnvPosixTest, RunImmediately) {
   }
 }
 
+#ifdef OS_WIN
+TEST_F(EnvPosixTest, AreFilesSame) {
+  {
+    bool tmp;
+    if (env_->AreFilesSame("", "", &tmp).IsNotSupported()) {
+      fprintf(stderr,
+              "skipping EnvBasicTestWithParam.AreFilesSame due to "
+              "unsupported Env::AreFilesSame\n");
+      return;
+    }
+  }
+
+  const EnvOptions soptions;
+  auto* env = Env::Default();
+  std::string same_file_name = test::TmpDir(env) + "/same_file";
+  std::string same_file_link_name = same_file_name + "_link";
+
+  std::unique_ptr<WritableFile> same_file;
+  ASSERT_OK(env->NewWritableFile(same_file_name,
+    &same_file, soptions));
+  same_file->Append("random_data");
+  ASSERT_OK(same_file->Flush());
+  same_file.reset();
+
+  ASSERT_OK(env->LinkFile(same_file_name, same_file_link_name));
+  bool result = false;
+  ASSERT_OK(env->AreFilesSame(same_file_name, same_file_link_name, &result));
+  ASSERT_TRUE(result);
+}
+#endif
+
 TEST_P(EnvPosixTestWithParam, UnSchedule) {
   std::atomic<bool> called(false);
   env_->SetBackgroundThreads(1, Env::LOW);
@@ -171,6 +202,11 @@ TEST_P(EnvPosixTestWithParam, UnSchedule) {
   WaitThreadPoolsEmpty();
 }
 
+// This tests assumes that the last scheduled
+// task will run last. In fact, in the allotted
+// sleeping time nothing may actually run or they may
+// run in any order. The purpose of the test is unclear.
+#ifndef OS_WIN
 TEST_P(EnvPosixTestWithParam, RunMany) {
   std::atomic<int> last_id(0);
 
@@ -203,6 +239,7 @@ TEST_P(EnvPosixTestWithParam, RunMany) {
   ASSERT_EQ(4, cur);
   WaitThreadPoolsEmpty();
 }
+#endif
 
 struct State {
   port::Mutex mu;
@@ -701,7 +738,6 @@ TEST_F(EnvPosixTest, PositionedAppend) {
   IoctlFriendlyTmpdir ift;
   ASSERT_OK(env_->NewWritableFile(ift.name() + "/f", &writable_file, options));
   const size_t kBlockSize = 4096;
-  const size_t kPageSize = 4096;
   const size_t kDataSize = kPageSize;
   // Write a page worth of 'a'
   auto data_ptr = NewAligned(kDataSize, 'a');
@@ -1138,7 +1174,7 @@ TEST_P(EnvPosixTestWithParam, Preallocation) {
     unique_ptr<WritableFile> srcfile;
     EnvOptions soptions;
     soptions.use_direct_reads = soptions.use_direct_writes = direct_io_;
-#if !defined(OS_MACOSX) && !defined(OS_WIN) && !defined(OS_SOLARIS) && !defined(OS_AIX)
+#if !defined(OS_MACOSX) && !defined(OS_WIN) && !defined(OS_SOLARIS) && !defined(OS_AIX) && !defined(OS_OPENBSD) && !defined(OS_FREEBSD)
     if (soptions.use_direct_writes) {
       rocksdb::SyncPoint::GetInstance()->SetCallBack(
           "NewWritableFile:O_DIRECT", [&](void* arg) {
@@ -1200,7 +1236,7 @@ TEST_P(EnvPosixTestWithParam, ConsistentChildrenAttributes) {
       oss << test::TmpDir(env_) << "/testfile_" << i;
       const std::string path = oss.str();
       unique_ptr<WritableFile> file;
-#if !defined(OS_MACOSX) && !defined(OS_WIN) && !defined(OS_SOLARIS) && !defined(OS_AIX)
+#if !defined(OS_MACOSX) && !defined(OS_WIN) && !defined(OS_SOLARIS) && !defined(OS_AIX) && !defined(OS_OPENBSD) && !defined(OS_FREEBSD)
       if (soptions.use_direct_writes) {
         rocksdb::SyncPoint::GetInstance()->SetCallBack(
             "NewWritableFile:O_DIRECT", [&](void* arg) {
@@ -1250,33 +1286,36 @@ TEST_P(EnvPosixTestWithParam, WritableFileWrapper) {
       inc(0);
     }
 
-    Status Append(const Slice& data) override { inc(1); return Status::OK(); }
-    Status Truncate(uint64_t size) override { return Status::OK(); }
+    Status Append(const Slice& /*data*/) override {
+      inc(1);
+      return Status::OK();
+    }
+    Status Truncate(uint64_t /*size*/) override { return Status::OK(); }
     Status Close() override { inc(2); return Status::OK(); }
     Status Flush() override { inc(3); return Status::OK(); }
     Status Sync() override { inc(4); return Status::OK(); }
     Status Fsync() override { inc(5); return Status::OK(); }
-    void SetIOPriority(Env::IOPriority pri) override { inc(6); }
+    void SetIOPriority(Env::IOPriority /*pri*/) override { inc(6); }
     uint64_t GetFileSize() override { inc(7); return 0; }
-    void GetPreallocationStatus(size_t* block_size,
-                                size_t* last_allocated_block) override {
+    void GetPreallocationStatus(size_t* /*block_size*/,
+                                size_t* /*last_allocated_block*/) override {
       inc(8);
     }
-    size_t GetUniqueId(char* id, size_t max_size) const override {
+    size_t GetUniqueId(char* /*id*/, size_t /*max_size*/) const override {
       inc(9);
       return 0;
     }
-    Status InvalidateCache(size_t offset, size_t length) override {
+    Status InvalidateCache(size_t /*offset*/, size_t /*length*/) override {
       inc(10);
       return Status::OK();
     }
 
    protected:
-    Status Allocate(uint64_t offset, uint64_t len) override {
+    Status Allocate(uint64_t /*offset*/, uint64_t /*len*/) override {
       inc(11);
       return Status::OK();
     }
-    Status RangeSync(uint64_t offset, uint64_t nbytes) override {
+    Status RangeSync(uint64_t /*offset*/, uint64_t /*nbytes*/) override {
       inc(12);
       return Status::OK();
     }
@@ -1468,6 +1507,72 @@ TEST_P(EnvPosixTestWithParam, PosixRandomRWFileRandomized) {
 
   // clean up
   env_->DeleteFile(path);
+}
+
+class TestEnv : public EnvWrapper {
+  public:
+    explicit TestEnv() : EnvWrapper(Env::Default()),
+                close_count(0) { }
+
+  class TestLogger : public Logger {
+   public:
+    using Logger::Logv;
+    TestLogger(TestEnv* env_ptr) : Logger() { env = env_ptr; }
+    ~TestLogger() {
+      if (!closed_) {
+        CloseHelper();
+      }
+    }
+    virtual void Logv(const char* format, va_list ap) override{};
+
+   protected:
+    virtual Status CloseImpl() override { return CloseHelper(); }
+
+   private:
+    Status CloseHelper() {
+      env->CloseCountInc();;
+      return Status::OK();
+    }
+    TestEnv* env;
+  };
+
+  void CloseCountInc() { close_count++; }
+
+  int GetCloseCount() { return close_count; }
+
+  virtual Status NewLogger(const std::string& fname,
+                           shared_ptr<Logger>* result) {
+    result->reset(new TestLogger(this));
+    return Status::OK();
+  }
+
+ private:
+  int close_count;
+};
+
+class EnvTest : public testing::Test {};
+
+TEST_F(EnvTest, Close) {
+  TestEnv* env = new TestEnv();
+  std::shared_ptr<Logger> logger;
+  Status s;
+
+  s = env->NewLogger("", &logger);
+  ASSERT_EQ(s, Status::OK());
+  logger.get()->Close();
+  ASSERT_EQ(env->GetCloseCount(), 1);
+  // Call Close() again. CloseHelper() should not be called again
+  logger.get()->Close();
+  ASSERT_EQ(env->GetCloseCount(), 1);
+  logger.reset();
+  ASSERT_EQ(env->GetCloseCount(), 1);
+
+  s = env->NewLogger("", &logger);
+  ASSERT_EQ(s, Status::OK());
+  logger.reset();
+  ASSERT_EQ(env->GetCloseCount(), 2);
+
+  delete env;
 }
 
 INSTANTIATE_TEST_CASE_P(DefaultEnvWithoutDirectIO, EnvPosixTestWithParam,

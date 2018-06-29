@@ -26,7 +26,7 @@ extern std::vector<std::string> rocksdb_kill_prefix_blacklist;
 #else
 
 namespace rocksdb {
-// Kill the process with probablity 1/odds for testing.
+// Kill the process with probability 1/odds for testing.
 extern void TestKillRandom(std::string kill_point, int odds,
                            const std::string& srcfile, int srcline);
 
@@ -46,6 +46,7 @@ extern void TestKillRandom(std::string kill_point, int odds,
 
 #ifdef NDEBUG
 #define TEST_SYNC_POINT(x)
+#define TEST_IDX_SYNC_POINT(x, index)
 #define TEST_SYNC_POINT_CALLBACK(x, y)
 #else
 
@@ -81,6 +82,9 @@ class SyncPoint {
                                 const std::vector<SyncPointPair>& markers);
 
   // Set up a call back function in sync point.
+  // The argument to the callback is passed through from
+  // TEST_SYNC_POINT_CALLBACK(); nullptr if TEST_SYNC_POINT or
+  // TEST_IDX_SYNC_POINT was used.
   void SetCallBack(const std::string point,
                    std::function<void(void*)> callback);
 
@@ -101,7 +105,7 @@ class SyncPoint {
 
   // triggered by TEST_SYNC_POINT, blocking execution until all predecessors
   // are executed.
-  // And/or call registered callback functionn, with argument `cb_arg`
+  // And/or call registered callback function, with argument `cb_arg`
   void Process(const std::string& point, void* cb_arg = nullptr);
 
   // TODO: it might be useful to provide a function that blocks until all
@@ -129,12 +133,14 @@ class SyncPoint {
 }  // namespace rocksdb
 
 // Use TEST_SYNC_POINT to specify sync points inside code base.
-// Sync points can have happens-after depedency on other sync points,
+// Sync points can have happens-after dependency on other sync points,
 // configured at runtime via SyncPoint::LoadDependency. This could be
 // utilized to re-produce race conditions between threads.
 // See TransactionLogIteratorRace in db_test.cc for an example use case.
 // TEST_SYNC_POINT is no op in release build.
 #define TEST_SYNC_POINT(x) rocksdb::SyncPoint::GetInstance()->Process(x)
+#define TEST_IDX_SYNC_POINT(x, index) \
+  rocksdb::SyncPoint::GetInstance()->Process(x + std::to_string(index))
 #define TEST_SYNC_POINT_CALLBACK(x, y) \
   rocksdb::SyncPoint::GetInstance()->Process(x, y)
 #endif  // NDEBUG

@@ -19,10 +19,10 @@ uint64_t DBImpl::TEST_GetLevel0TotalSize() {
   return default_cf_handle_->cfd()->current()->storage_info()->NumLevelBytes(0);
 }
 
-void DBImpl::TEST_HandleWALFull() {
+void DBImpl::TEST_SwitchWAL() {
   WriteContext write_context;
   InstrumentedMutexLock l(&mutex_);
-  HandleWALFull(&write_context);
+  SwitchWAL(&write_context);
 }
 
 int64_t DBImpl::TEST_MaxNextLevelOverlappingBytes(
@@ -58,6 +58,10 @@ void DBImpl::TEST_GetFilesMetaData(
 
 uint64_t DBImpl::TEST_Current_Manifest_FileNo() {
   return versions_->manifest_file_number();
+}
+
+uint64_t DBImpl::TEST_Current_Next_FileNo() {
+  return versions_->current_next_file_number();
 }
 
 Status DBImpl::TEST_CompactRange(int level, const Slice* begin,
@@ -99,7 +103,7 @@ Status DBImpl::TEST_FlushMemTable(bool wait, ColumnFamilyHandle* cfh) {
     auto cfhi = reinterpret_cast<ColumnFamilyHandleImpl*>(cfh);
     cfd = cfhi->cfd();
   }
-  return FlushMemTable(cfd, fo);
+  return FlushMemTable(cfd, fo, FlushReason::kTest);
 }
 
 Status DBImpl::TEST_WaitForFlushMemTable(ColumnFamilyHandle* column_family) {
@@ -113,7 +117,7 @@ Status DBImpl::TEST_WaitForFlushMemTable(ColumnFamilyHandle* column_family) {
   return WaitForFlushMemTable(cfd);
 }
 
-Status DBImpl::TEST_WaitForCompact() {
+Status DBImpl::TEST_WaitForCompact(bool wait_unscheduled) {
   // Wait until the compaction completes
 
   // TODO: a bug here. This function actually does not necessarily
@@ -122,7 +126,8 @@ Status DBImpl::TEST_WaitForCompact() {
 
   InstrumentedMutexLock l(&mutex_);
   while ((bg_bottom_compaction_scheduled_ || bg_compaction_scheduled_ ||
-          bg_flush_scheduled_) &&
+          bg_flush_scheduled_ ||
+          (wait_unscheduled && unscheduled_compactions_)) &&
          bg_error_.ok()) {
     bg_cv_.Wait();
   }
@@ -182,6 +187,12 @@ uint64_t DBImpl::TEST_FindMinLogContainingOutstandingPrep() {
   return FindMinLogContainingOutstandingPrep();
 }
 
+size_t DBImpl::TEST_PreparedSectionCompletedSize() {
+  return prepared_section_completed_.size();
+}
+
+size_t DBImpl::TEST_LogsWithPrepSize() { return logs_with_prep_.size(); }
+
 uint64_t DBImpl::TEST_FindMinPrepLogReferencedByMemTable() {
   return FindMinPrepLogReferencedByMemTable();
 }
@@ -203,6 +214,14 @@ int DBImpl::TEST_BGCompactionsAllowed() const {
 int DBImpl::TEST_BGFlushesAllowed() const {
   InstrumentedMutexLock l(&mutex_);
   return GetBGJobLimits().max_flushes;
+}
+
+SequenceNumber DBImpl::TEST_GetLastVisibleSequence() const {
+  if (last_seq_same_as_publish_seq_) {
+    return versions_->LastSequence();
+  } else {
+    return versions_->LastAllocatedSequence();
+  }
 }
 
 }  // namespace rocksdb

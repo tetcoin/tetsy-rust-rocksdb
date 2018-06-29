@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "rocksdb/status.h"
 
@@ -19,6 +20,7 @@ class Logger;
 // SstFileManager is used to track SST files in the DB and control there
 // deletion rate.
 // All SstFileManager public functions are thread-safe.
+// SstFileManager is not extensible.
 class SstFileManager {
  public:
   virtual ~SstFileManager() {}
@@ -33,11 +35,21 @@ class SstFileManager {
   // thread-safe.
   virtual void SetMaxAllowedSpaceUsage(uint64_t max_allowed_space) = 0;
 
+  // Set the amount of buffer room each compaction should be able to leave.
+  // In other words, at its maximum disk space consumption, the compaction
+  // should still leave compaction_buffer_size available on the disk so that
+  // other background functions may continue, such as logging and flushing.
+  virtual void SetCompactionBufferSize(uint64_t compaction_buffer_size) = 0;
+
   // Return true if the total size of SST files exceeded the maximum allowed
   // space usage.
   //
   // thread-safe.
   virtual bool IsMaxAllowedSpaceReached() = 0;
+
+  // Returns true if the total size of SST files as well as estimated size
+  // of ongoing compactions exceeds the maximums allowed space usage.
+  virtual bool IsMaxAllowedSpaceReachedIncludingCompactions() = 0;
 
   // Return the total size of all tracked files.
   // thread-safe
@@ -55,6 +67,14 @@ class SstFileManager {
   // zero means disable delete rate limiting and delete files immediately
   // thread-safe
   virtual void SetDeleteRateBytesPerSecond(int64_t delete_rate) = 0;
+
+  // Return trash/DB size ratio where new files will be deleted immediately
+  // thread-safe
+  virtual double GetMaxTrashDBRatio() = 0;
+
+  // Update trash/DB size ratio where new files will be deleted immediately
+  // thread-safe
+  virtual void SetMaxTrashDBRatio(double ratio) = 0;
 };
 
 // Create a new SstFileManager that can be shared among multiple RocksDB
@@ -64,22 +84,22 @@ class SstFileManager {
 // @param info_log: If not nullptr, info_log will be used to log errors.
 //
 // == Deletion rate limiting specific arguments ==
-// @param trash_dir: Path to the directory where deleted files will be moved
-//    to be deleted in a background thread while applying rate limiting. If this
-//    directory doesn't exist, it will be created. This directory should not be
-//    used by any other process or any other SstFileManager, Set to "" to
-//    disable deletion rate limiting.
+// @param trash_dir: Deprecated, this argument have no effect
 // @param rate_bytes_per_sec: How many bytes should be deleted per second, If
 //    this value is set to 1024 (1 Kb / sec) and we deleted a file of size 4 Kb
 //    in 1 second, we will wait for another 3 seconds before we delete other
 //    files, Set to 0 to disable deletion rate limiting.
-// @param delete_existing_trash: If set to true, the newly created
-//    SstFileManager will delete files that already exist in trash_dir.
+// @param delete_existing_trash: Deprecated, this argument have no effect, but
+//    if user provide trash_dir we will schedule deletes for files in the dir
 // @param status: If not nullptr, status will contain any errors that happened
 //    during creating the missing trash_dir or deleting existing files in trash.
+// @param max_trash_db_ratio: If the trash size constitutes for more than this
+//    fraction of the total DB size we will start deleting new files passed to
+//    DeleteScheduler immediately
 extern SstFileManager* NewSstFileManager(
     Env* env, std::shared_ptr<Logger> info_log = nullptr,
     std::string trash_dir = "", int64_t rate_bytes_per_sec = 0,
-    bool delete_existing_trash = true, Status* status = nullptr);
+    bool delete_existing_trash = true, Status* status = nullptr,
+    double max_trash_db_ratio = 0.25);
 
 }  // namespace rocksdb

@@ -61,6 +61,18 @@ jlong Java_org_rocksdb_Options_newOptions__JJ(JNIEnv* env, jclass jcls,
 
 /*
  * Class:     org_rocksdb_Options
+ * Method:    copyOptions
+ * Signature: (J)J
+ */
+jlong Java_org_rocksdb_Options_copyOptions(JNIEnv* env, jclass jcls,
+    jlong jhandle) {
+  auto new_opt = new rocksdb::Options(
+      *(reinterpret_cast<rocksdb::Options*>(jhandle)));
+  return reinterpret_cast<jlong>(new_opt);
+}
+
+/*
+ * Class:     org_rocksdb_Options
  * Method:    disposeInternal
  * Signature: (J)V
  */
@@ -146,12 +158,33 @@ void Java_org_rocksdb_Options_setComparatorHandle__JI(
 /*
  * Class:     org_rocksdb_Options
  * Method:    setComparatorHandle
- * Signature: (JJ)V
+ * Signature: (JJB)V
  */
-void Java_org_rocksdb_Options_setComparatorHandle__JJ(
-    JNIEnv* env, jobject jobj, jlong jopt_handle, jlong jcomparator_handle) {
-  reinterpret_cast<rocksdb::Options*>(jopt_handle)->comparator =
-      reinterpret_cast<rocksdb::Comparator*>(jcomparator_handle);
+void Java_org_rocksdb_Options_setComparatorHandle__JJB(
+    JNIEnv* env, jobject jobj, jlong jopt_handle, jlong jcomparator_handle,
+    jbyte jcomparator_type) {
+  rocksdb::Comparator *comparator = nullptr;
+  switch(jcomparator_type) {
+      // JAVA_COMPARATOR
+      case 0x0:
+        comparator =
+            reinterpret_cast<rocksdb::ComparatorJniCallback*>(jcomparator_handle);
+        break;
+
+      // JAVA_DIRECT_COMPARATOR
+      case 0x1:
+        comparator =
+            reinterpret_cast<rocksdb::DirectComparatorJniCallback*>(jcomparator_handle);
+        break;
+
+      // JAVA_NATIVE_COMPARATOR_WRAPPER
+      case 0x2:
+        comparator =
+            reinterpret_cast<rocksdb::Comparator*>(jcomparator_handle);
+        break;
+  }
+  auto* opt = reinterpret_cast<rocksdb::Options*>(jopt_handle);
+  opt->comparator = comparator;
 }
 
 /*
@@ -431,7 +464,7 @@ void Java_org_rocksdb_Options_setDbPaths(
           jtarget_sizes, ptr_jtarget_size, JNI_ABORT);
       return;
     }
-    std::string path = rocksdb::JniUtil::copyString(
+    std::string path = rocksdb::JniUtil::copyStdString(
         env, static_cast<jstring>(jpath), &has_exception);
     env->DeleteLocalRef(jpath);
 
@@ -666,6 +699,28 @@ void Java_org_rocksdb_Options_setMaxBackgroundFlushes(
     JNIEnv* env, jobject jobj, jlong jhandle, jint max_background_flushes) {
   reinterpret_cast<rocksdb::Options*>(jhandle)->max_background_flushes =
       static_cast<int>(max_background_flushes);
+}
+
+/*
+ * Class:     org_rocksdb_Options
+ * Method:    maxBackgroundJobs
+ * Signature: (J)I
+ */
+jint Java_org_rocksdb_Options_maxBackgroundJobs(JNIEnv* env, jobject jobj,
+                                                jlong jhandle) {
+  return reinterpret_cast<rocksdb::Options*>(jhandle)->max_background_jobs;
+}
+
+/*
+ * Class:     org_rocksdb_Options
+ * Method:    setMaxBackgroundJobs
+ * Signature: (JI)V
+ */
+void Java_org_rocksdb_Options_setMaxBackgroundJobs(JNIEnv* env, jobject jobj,
+                                                   jlong jhandle,
+                                                   jint max_background_jobs) {
+  reinterpret_cast<rocksdb::Options*>(jhandle)->max_background_jobs =
+      static_cast<int>(max_background_jobs);
 }
 
 /*
@@ -2821,6 +2876,18 @@ jlong Java_org_rocksdb_ColumnFamilyOptions_newColumnFamilyOptions(
 
 /*
  * Class:     org_rocksdb_ColumnFamilyOptions
+ * Method:    copyColumnFamilyOptions
+ * Signature: (J)J
+ */
+jlong Java_org_rocksdb_ColumnFamilyOptions_copyColumnFamilyOptions(
+    JNIEnv* env, jclass jcls, jlong jhandle) {
+  auto new_opt = new rocksdb::ColumnFamilyOptions(
+      *(reinterpret_cast<rocksdb::ColumnFamilyOptions*>(jhandle)));
+  return reinterpret_cast<jlong>(new_opt);
+}
+
+/*
+ * Class:     org_rocksdb_ColumnFamilyOptions
  * Method:    getColumnFamilyOptionsFromProps
  * Signature: (Ljava/util/String;)J
  */
@@ -2931,12 +2998,33 @@ void Java_org_rocksdb_ColumnFamilyOptions_setComparatorHandle__JI(
 /*
  * Class:     org_rocksdb_ColumnFamilyOptions
  * Method:    setComparatorHandle
- * Signature: (JJ)V
+ * Signature: (JJB)V
  */
-void Java_org_rocksdb_ColumnFamilyOptions_setComparatorHandle__JJ(
-    JNIEnv* env, jobject jobj, jlong jopt_handle, jlong jcomparator_handle) {
-  reinterpret_cast<rocksdb::ColumnFamilyOptions*>(jopt_handle)->comparator =
-      reinterpret_cast<rocksdb::Comparator*>(jcomparator_handle);
+void Java_org_rocksdb_ColumnFamilyOptions_setComparatorHandle__JJB(
+    JNIEnv* env, jobject jobj, jlong jopt_handle, jlong jcomparator_handle,
+    jbyte jcomparator_type) {
+  rocksdb::Comparator *comparator = nullptr;
+  switch(jcomparator_type) {
+      // JAVA_COMPARATOR
+      case 0x0:
+        comparator =
+            reinterpret_cast<rocksdb::ComparatorJniCallback*>(jcomparator_handle);
+        break;
+
+      // JAVA_DIRECT_COMPARATOR
+      case 0x1:
+        comparator =
+            reinterpret_cast<rocksdb::DirectComparatorJniCallback*>(jcomparator_handle);
+        break;
+
+      // JAVA_NATIVE_COMPARATOR_WRAPPER
+      case 0x2:
+        comparator =
+            reinterpret_cast<rocksdb::Comparator*>(jcomparator_handle);
+        break;
+  }
+  auto* opt = reinterpret_cast<rocksdb::ColumnFamilyOptions*>(jopt_handle);
+  opt->comparator = comparator;
 }
 
 /*
@@ -2981,6 +3069,21 @@ void Java_org_rocksdb_ColumnFamilyOptions_setCompactionFilterHandle(
   reinterpret_cast<rocksdb::ColumnFamilyOptions*>(jopt_handle)->
       compaction_filter = reinterpret_cast<rocksdb::CompactionFilter*>
         (jcompactionfilter_handle);
+}
+
+/*
+ * Class:     org_rocksdb_ColumnFamilyOptions
+ * Method:    setCompactionFilterFactoryHandle
+ * Signature: (JJ)V
+ */
+void JNICALL Java_org_rocksdb_ColumnFamilyOptions_setCompactionFilterFactoryHandle(
+    JNIEnv* env , jobject jobj, jlong jopt_handle,
+    jlong jcompactionfilterfactory_handle) {
+  auto* cff_factory =
+      reinterpret_cast<std::shared_ptr<rocksdb::CompactionFilterFactory> *>(
+          jcompactionfilterfactory_handle);
+  reinterpret_cast<rocksdb::ColumnFamilyOptions*>(jopt_handle)->
+      compaction_filter_factory = *cff_factory;
 }
 
 /*
@@ -4112,6 +4215,18 @@ jlong Java_org_rocksdb_DBOptions_newDBOptions(JNIEnv* env,
 
 /*
  * Class:     org_rocksdb_DBOptions
+ * Method:    copyDBOptions
+ * Signature: (J)J
+ */
+jlong Java_org_rocksdb_DBOptions_copyDBOptions(JNIEnv* env, jclass jcls,
+    jlong jhandle) {
+  auto new_opt = new rocksdb::DBOptions(
+      *(reinterpret_cast<rocksdb::DBOptions*>(jhandle)));
+  return reinterpret_cast<jlong>(new_opt);
+}
+
+/*
+ * Class:     org_rocksdb_DBOptions
  * Method:    getDBOptionsFromProps
  * Signature: (Ljava/util/String;)J
  */
@@ -4464,7 +4579,7 @@ void Java_org_rocksdb_DBOptions_setDbPaths(
           jtarget_sizes, ptr_jtarget_size, JNI_ABORT);
       return;
     }
-    std::string path = rocksdb::JniUtil::copyString(
+    std::string path = rocksdb::JniUtil::copyStdString(
         env, static_cast<jstring>(jpath), &has_exception);
     env->DeleteLocalRef(jpath);
 
@@ -4698,6 +4813,28 @@ jint Java_org_rocksdb_DBOptions_maxBackgroundFlushes(
     JNIEnv* env, jobject jobj, jlong jhandle) {
   return reinterpret_cast<rocksdb::DBOptions*>(jhandle)->
       max_background_flushes;
+}
+
+/*
+ * Class:     org_rocksdb_DBOptions
+ * Method:    setMaxBackgroundJobs
+ * Signature: (JI)V
+ */
+void Java_org_rocksdb_DBOptions_setMaxBackgroundJobs(JNIEnv* env, jobject jobj,
+                                                     jlong jhandle,
+                                                     jint max_background_jobs) {
+  reinterpret_cast<rocksdb::DBOptions*>(jhandle)->max_background_jobs =
+      static_cast<int>(max_background_jobs);
+}
+
+/*
+ * Class:     org_rocksdb_DBOptions
+ * Method:    maxBackgroundJobs
+ * Signature: (J)I
+ */
+jint Java_org_rocksdb_DBOptions_maxBackgroundJobs(JNIEnv* env, jobject jobj,
+                                                  jlong jhandle) {
+  return reinterpret_cast<rocksdb::DBOptions*>(jhandle)->max_background_jobs;
 }
 
 /*
@@ -5619,6 +5756,18 @@ jlong Java_org_rocksdb_WriteOptions_newWriteOptions(
 
 /*
  * Class:     org_rocksdb_WriteOptions
+ * Method:    copyWriteOptions
+ * Signature: (J)J
+ */
+jlong Java_org_rocksdb_WriteOptions_copyWriteOptions(
+    JNIEnv* env, jclass jcls, jlong jhandle) {
+  auto new_opt = new rocksdb::WriteOptions(
+      *(reinterpret_cast<rocksdb::WriteOptions*>(jhandle)));
+  return reinterpret_cast<jlong>(new_opt);
+}
+
+/*
+ * Class:     org_rocksdb_WriteOptions
  * Method:    disposeInternal
  * Signature: ()V
  */
@@ -5726,6 +5875,18 @@ jlong Java_org_rocksdb_ReadOptions_newReadOptions(
     JNIEnv* env, jclass jcls) {
   auto* read_options = new rocksdb::ReadOptions();
   return reinterpret_cast<jlong>(read_options);
+}
+
+/*
+ * Class:     org_rocksdb_ReadOptions
+ * Method:    copyReadOptions
+ * Signature: (J)J
+ */
+jlong Java_org_rocksdb_ReadOptions_copyReadOptions(
+    JNIEnv* env, jclass jcls, jlong jhandle) {
+  auto new_opt = new rocksdb::ReadOptions(
+      *(reinterpret_cast<rocksdb::ReadOptions*>(jhandle)));
+  return reinterpret_cast<jlong>(new_opt);
 }
 
 /*
@@ -6001,6 +6162,29 @@ void Java_org_rocksdb_ReadOptions_setReadTier(
     JNIEnv* env, jobject jobj, jlong jhandle, jbyte jread_tier) {
   reinterpret_cast<rocksdb::ReadOptions*>(jhandle)->read_tier =
       static_cast<rocksdb::ReadTier>(jread_tier);
+}
+
+/*
+ * Class:     org_rocksdb_ReadOptions
+ * Method:    setIterateUpperBound
+ * Signature: (JJ)I
+ */
+void Java_org_rocksdb_ReadOptions_setIterateUpperBound(
+    JNIEnv* env, jobject jobj, jlong jhandle, jlong jupper_bound_slice_handle) {
+  reinterpret_cast<rocksdb::ReadOptions*>(jhandle)->iterate_upper_bound =
+      reinterpret_cast<rocksdb::Slice*>(jupper_bound_slice_handle);
+}
+
+/*
+ * Class:     org_rocksdb_ReadOptions
+ * Method:    iterateUpperBound
+ * Signature: (J)J
+ */
+jlong Java_org_rocksdb_ReadOptions_iterateUpperBound(
+    JNIEnv* env, jobject jobj, jlong jhandle) {
+  auto& upper_bound_slice_handle =
+      reinterpret_cast<rocksdb::ReadOptions*>(jhandle)->iterate_upper_bound;
+  return reinterpret_cast<jlong>(upper_bound_slice_handle);
 }
 
 /////////////////////////////////////////////////////////////////////

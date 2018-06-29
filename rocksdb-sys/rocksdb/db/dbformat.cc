@@ -36,6 +36,32 @@ uint64_t PackSequenceAndType(uint64_t seq, ValueType t) {
   return (seq << 8) | t;
 }
 
+EntryType GetEntryType(ValueType value_type) {
+  switch (value_type) {
+    case kTypeValue:
+      return kEntryPut;
+    case kTypeDeletion:
+      return kEntryDelete;
+    case kTypeSingleDeletion:
+      return kEntrySingleDelete;
+    case kTypeMerge:
+      return kEntryMerge;
+    default:
+      return kEntryOther;
+  }
+}
+
+bool ParseFullKey(const Slice& internal_key, FullKey* fkey) {
+  ParsedInternalKey ikey;
+  if (!ParseInternalKey(internal_key, &ikey)) {
+    return false;
+  }
+  fkey->user_key = ikey.user_key;
+  fkey->sequence = ikey.sequence;
+  fkey->type = GetEntryType(ikey.type);
+  return true;
+}
+
 void UnPackSequenceAndType(uint64_t packed, uint64_t* seq, ValueType* t) {
   *seq = packed >> 8;
   *t = static_cast<ValueType>(packed & 0xff);
@@ -90,6 +116,26 @@ int InternalKeyComparator::Compare(const Slice& akey, const Slice& bkey) const {
   if (r == 0) {
     const uint64_t anum = DecodeFixed64(akey.data() + akey.size() - 8);
     const uint64_t bnum = DecodeFixed64(bkey.data() + bkey.size() - 8);
+    if (anum > bnum) {
+      r = -1;
+    } else if (anum < bnum) {
+      r = +1;
+    }
+  }
+  return r;
+}
+
+int InternalKeyComparator::CompareKeySeq(const Slice& akey,
+                                         const Slice& bkey) const {
+  // Order by:
+  //    increasing user key (according to user-supplied comparator)
+  //    decreasing sequence number
+  int r = user_comparator_->Compare(ExtractUserKey(akey), ExtractUserKey(bkey));
+  PERF_COUNTER_ADD(user_key_comparison_count, 1);
+  if (r == 0) {
+    // Shift the number to exclude the last byte which contains the value type
+    const uint64_t anum = DecodeFixed64(akey.data() + akey.size() - 8) >> 8;
+    const uint64_t bnum = DecodeFixed64(bkey.data() + bkey.size() - 8) >> 8;
     if (anum > bnum) {
       r = -1;
     } else if (anum < bnum) {
@@ -174,4 +220,13 @@ LookupKey::LookupKey(const Slice& _user_key, SequenceNumber s) {
   end_ = dst;
 }
 
+void IterKey::EnlargeBuffer(size_t key_size) {
+  // If size is smaller than buffer size, continue using current buffer,
+  // or the static allocated one, as default
+  assert(key_size > buf_size_);
+  // Need to enlarge the buffer.
+  ResetBuffer();
+  buf_ = new char[key_size];
+  buf_size_ = key_size;
+}
 }  // namespace rocksdb

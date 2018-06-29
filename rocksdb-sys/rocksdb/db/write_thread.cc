@@ -394,6 +394,7 @@ size_t WriteThread::EnterAsBatchGroupLeader(Writer* leader,
     write_group->last_writer = w;
     write_group->size++;
   }
+  TEST_SYNC_POINT_CALLBACK("WriteThread::EnterAsBatchGroupLeader:End", w);
   return size;
 }
 
@@ -455,7 +456,8 @@ void WriteThread::EnterAsMemTableWriter(Writer* leader,
       last_writer->sequence + WriteBatchInternal::Count(last_writer->batch) - 1;
 }
 
-void WriteThread::ExitAsMemTableWriter(Writer* self, WriteGroup& write_group) {
+void WriteThread::ExitAsMemTableWriter(Writer* /*self*/,
+                                       WriteGroup& write_group) {
   Writer* leader = write_group.leader;
   Writer* last_writer = write_group.last_writer;
 

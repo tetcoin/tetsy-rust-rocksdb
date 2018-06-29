@@ -23,6 +23,7 @@
 #ifdef OS_LINUX
 #include <sys/statfs.h>
 #include <sys/syscall.h>
+#include <sys/sysmacros.h>
 #endif
 #include <sys/time.h>
 #include <sys/types.h>
@@ -427,8 +428,6 @@ class PosixEnv : public Env {
       result->reset(new PosixWritableFile(fname, fd, no_mmap_writes_options));
     }
     return s;
-
-    return s;
   }
 
   virtual Status NewRandomRWFile(const std::string& fname,
@@ -592,6 +591,26 @@ class PosixEnv : public Env {
     return result;
   }
 
+  virtual Status AreFilesSame(const std::string& first,
+                              const std::string& second, bool* res) override {
+    struct stat statbuf[2];
+    if (stat(first.c_str(), &statbuf[0]) != 0) {
+      return IOError("stat file", first, errno);
+    }
+    if (stat(second.c_str(), &statbuf[1]) != 0) {
+      return IOError("stat file", second, errno);
+    }
+
+    if (major(statbuf[0].st_dev) != major(statbuf[1].st_dev) ||
+        minor(statbuf[0].st_dev) != minor(statbuf[1].st_dev) ||
+        statbuf[0].st_ino != statbuf[1].st_ino) {
+      *res = false;
+    } else {
+      *res = true;
+    }
+    return Status::OK();
+  }
+
   virtual Status LockFile(const std::string& fname, FileLock** lock) override {
     *lock = nullptr;
     Status result;
@@ -628,7 +647,7 @@ class PosixEnv : public Env {
 
   virtual void Schedule(void (*function)(void* arg1), void* arg,
                         Priority pri = LOW, void* tag = nullptr,
-                        void (*unschedFunction)(void* arg) = 0) override;
+                        void (*unschedFunction)(void* arg) = nullptr) override;
 
   virtual int UnSchedule(void* arg, Priority pri) override;
 
@@ -744,7 +763,7 @@ class PosixEnv : public Env {
 
   virtual Status GetAbsolutePath(const std::string& db_path,
                                  std::string* output_path) override {
-    if (db_path.find('/') == 0) {
+    if (!db_path.empty() && db_path[0] == '/') {
       *output_path = db_path;
       return Status::OK();
     }
@@ -783,6 +802,15 @@ class PosixEnv : public Env {
 #endif
   }
 
+  virtual void LowerThreadPoolCPUPriority(Priority pool = LOW) override {
+    assert(pool >= Priority::BOTTOM && pool <= Priority::HIGH);
+#ifdef OS_LINUX
+    thread_pools_[pool].LowerCPUPriority();
+#else
+    (void)pool;
+#endif
+  }
+
   virtual std::string TimeToString(uint64_t secondsSince1970) override {
     const time_t seconds = (time_t)secondsSince1970;
     struct tm t;
@@ -813,6 +841,8 @@ class PosixEnv : public Env {
     // breaks TransactionLogIteratorStallAtLastRecord unit test. Fix the unit
     // test and make this false
     optimized.fallocate_with_keep_size = true;
+    optimized.writable_file_max_buffer_size =
+        db_options.writable_file_max_buffer_size;
     return optimized;
   }
 

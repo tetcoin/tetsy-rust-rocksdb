@@ -426,7 +426,7 @@ class CompactionJobStatsChecker : public EventListener {
   // Once a compaction completed, this function will verify the returned
   // CompactionJobInfo with the oldest CompactionJobInfo added earlier
   // in "expected_stats_" which has not yet being used for verification.
-  virtual void OnCompactionCompleted(DB *db, const CompactionJobInfo& ci) {
+  virtual void OnCompactionCompleted(DB* /*db*/, const CompactionJobInfo& ci) {
     if (verify_next_comp_io_stats_) {
       ASSERT_GT(ci.stats.file_write_nanos, 0);
       ASSERT_GT(ci.stats.file_range_sync_nanos, 0);
@@ -1034,7 +1034,7 @@ int main(int argc, char** argv) {
 #else
 #include <stdio.h>
 
-int main(int argc, char** argv) {
+int main(int /*argc*/, char** /*argv*/) {
   fprintf(stderr, "SKIPPED, not supported in ROCKSDB_LITE\n");
   return 0;
 }
@@ -1043,5 +1043,5 @@ int main(int argc, char** argv) {
 
 #else
 
-int main(int argc, char** argv) { return 0; }
+int main(int /*argc*/, char** /*argv*/) { return 0; }
 #endif  // !defined(IOS_CROSS_COMPILE)

@@ -35,6 +35,11 @@
 #include "util/string_util.h"
 #include "util/sync_point.h"
 
+#if defined(OS_LINUX) && !defined(F_SET_RW_HINT)
+#define F_LINUX_SPECIFIC_BASE 1024
+#define F_SET_RW_HINT         (F_LINUX_SPECIFIC_BASE + 12)
+#endif
+
 namespace rocksdb {
 
 // A wrapper for fadvise, if the platform doesn't support fadvise,
@@ -443,7 +448,7 @@ PosixMmapReadableFile::~PosixMmapReadableFile() {
 }
 
 Status PosixMmapReadableFile::Read(uint64_t offset, size_t n, Slice* result,
-                                   char* scratch) const {
+                                   char* /*scratch*/) const {
   Status s;
   if (offset > length_) {
     *result = Slice();
@@ -794,7 +799,7 @@ Status PosixWritableFile::Close() {
     // trim the extra space preallocated at the end of the file
     // NOTE(ljin): we probably don't want to surface failure as an IOError,
     // but it will be nice to log these errors.
-    int dummy __attribute__((unused));
+    int dummy __attribute__((__unused__));
     dummy = ftruncate(fd_, filesize_);
 #if defined(ROCKSDB_FALLOCATE_PRESENT) && !defined(TRAVIS)
     // in some file systems, ftruncate only trims trailing space if the
@@ -857,6 +862,24 @@ Status PosixWritableFile::Fsync() {
 bool PosixWritableFile::IsSyncThreadSafe() const { return true; }
 
 uint64_t PosixWritableFile::GetFileSize() { return filesize_; }
+
+void PosixWritableFile::SetWriteLifeTimeHint(Env::WriteLifeTimeHint hint) {
+#ifdef OS_LINUX
+// Suppress Valgrind "Unimplemented functionality" error.
+#ifndef ROCKSDB_VALGRIND_RUN
+  if (hint == write_hint_) {
+    return;
+  }
+  if (fcntl(fd_, F_SET_RW_HINT, &hint) == 0) {
+    write_hint_ = hint;
+  }
+#else
+  (void)hint;
+#endif // ROCKSDB_VALGRIND_RUN
+#else
+  (void)hint;
+#endif // OS_LINUX
+}
 
 Status PosixWritableFile::InvalidateCache(size_t offset, size_t length) {
   if (use_direct_io()) {
@@ -922,7 +945,7 @@ size_t PosixWritableFile::GetUniqueId(char* id, size_t max_size) const {
  */
 
 PosixRandomRWFile::PosixRandomRWFile(const std::string& fname, int fd,
-                                     const EnvOptions& options)
+                                     const EnvOptions& /*options*/)
     : filename_(fname), fd_(fd) {}
 
 PosixRandomRWFile::~PosixRandomRWFile() {

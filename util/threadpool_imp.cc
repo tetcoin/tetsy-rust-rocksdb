@@ -18,6 +18,7 @@
 
 #ifdef OS_LINUX
 #  include <sys/syscall.h>
+#  include <sys/resource.h>
 #endif
 
 #include <algorithm>
@@ -52,6 +53,8 @@ struct ThreadPoolImpl::Impl {
   }
 
   void LowerIOPriority();
+
+  void LowerCPUPriority();
 
   void WakeUpAllThreads() {
     bgsignal_.notify_all();
@@ -97,6 +100,7 @@ private:
   static void* BGThreadWrapper(void* arg);
 
   bool low_io_priority_;
+  bool low_cpu_priority_;
   Env::Priority priority_;
   Env*         env_;
 
@@ -125,6 +129,7 @@ inline
 ThreadPoolImpl::Impl::Impl()
     :
       low_io_priority_(false),
+      low_cpu_priority_(false),
       priority_(Env::LOW),
       env_(nullptr),
       total_threads_limit_(0),
@@ -147,6 +152,9 @@ void ThreadPoolImpl::Impl::JoinThreads(bool wait_for_jobs_to_complete) {
 
   wait_for_jobs_to_complete_ = wait_for_jobs_to_complete;
   exit_all_threads_ = true;
+  // prevent threads from being recreated right after they're joined, in case
+  // the user is concurrently submitting jobs.
+  total_threads_limit_ = 0;
 
   lock.unlock();
 
@@ -168,9 +176,16 @@ void ThreadPoolImpl::Impl::LowerIOPriority() {
   low_io_priority_ = true;
 }
 
+inline
+void ThreadPoolImpl::Impl::LowerCPUPriority() {
+  std::lock_guard<std::mutex> lock(mu_);
+  low_cpu_priority_ = true;
+}
 
 void ThreadPoolImpl::Impl::BGThread(size_t thread_id) {
   bool low_io_priority = false;
+  bool low_cpu_priority = false;
+
   while (true) {
 // Wait until there is an item that is ready to run
     std::unique_lock<std::mutex> lock(mu_);
@@ -210,9 +225,20 @@ void ThreadPoolImpl::Impl::BGThread(size_t thread_id) {
                      std::memory_order_relaxed);
 
     bool decrease_io_priority = (low_io_priority != low_io_priority_);
+    bool decrease_cpu_priority = (low_cpu_priority != low_cpu_priority_);
     lock.unlock();
 
 #ifdef OS_LINUX
+    if (decrease_cpu_priority) {
+      setpriority(
+          PRIO_PROCESS,
+          // Current thread.
+          0,
+          // Lowest priority possible.
+          19);
+      low_cpu_priority = true;
+    }
+
     if (decrease_io_priority) {
 #define IOPRIO_CLASS_SHIFT (13)
 #define IOPRIO_PRIO_VALUE(class, data) (((class) << IOPRIO_CLASS_SHIFT) | data)
@@ -233,6 +259,7 @@ void ThreadPoolImpl::Impl::BGThread(size_t thread_id) {
     }
 #else
     (void)decrease_io_priority;  // avoid 'unused variable' error
+    (void)decrease_cpu_priority;
 #endif
     func();
   }
@@ -251,11 +278,25 @@ void* ThreadPoolImpl::Impl::BGThreadWrapper(void* arg) {
   size_t thread_id = meta->thread_id_;
   ThreadPoolImpl::Impl* tp = meta->thread_pool_;
 #ifdef ROCKSDB_USING_THREAD_STATUS
-  // for thread-status
-  ThreadStatusUtil::RegisterThread(
-      tp->GetHostEnv(), (tp->GetThreadPriority() == Env::Priority::HIGH
-                             ? ThreadStatus::HIGH_PRIORITY
-                             : ThreadStatus::LOW_PRIORITY));
+  // initialize it because compiler isn't good enough to see we don't use it
+  // uninitialized
+  ThreadStatus::ThreadType thread_type = ThreadStatus::NUM_THREAD_TYPES;
+  switch (tp->GetThreadPriority()) {
+    case Env::Priority::HIGH:
+      thread_type = ThreadStatus::HIGH_PRIORITY;
+      break;
+    case Env::Priority::LOW:
+      thread_type = ThreadStatus::LOW_PRIORITY;
+      break;
+    case Env::Priority::BOTTOM:
+      thread_type = ThreadStatus::BOTTOM_PRIORITY;
+      break;
+    case Env::Priority::TOTAL:
+      assert(false);
+      return nullptr;
+  }
+  assert(thread_type != ThreadStatus::NUM_THREAD_TYPES);
+  ThreadStatusUtil::RegisterThread(tp->GetHostEnv(), thread_type);
 #endif
   delete meta;
   tp->BGThread(thread_id);
@@ -402,6 +443,10 @@ void ThreadPoolImpl::WaitForJobsAndJoinAllThreads() {
 
 void ThreadPoolImpl::LowerIOPriority() {
   impl_->LowerIOPriority();
+}
+
+void ThreadPoolImpl::LowerCPUPriority() {
+  impl_->LowerCPUPriority();
 }
 
 void ThreadPoolImpl::IncBackgroundThreadsIfNeeded(int num) {

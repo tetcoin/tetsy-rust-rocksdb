@@ -16,7 +16,7 @@ extern crate rocksdb_sys;
 extern crate local_encoding;
 
 pub use rocksdb_sys::rocksdb_ffi as rocksdb_ffi;
-pub use rocksdb_ffi::{DBCompactionStyle, DBComparator, new_bloom_filter};
+pub use rocksdb_ffi::{DBCompressionType, DBCompactionStyle, DBComparator, new_bloom_filter};
 pub use rocksdb::{DB, DBIterator, DBVector, Direction, IteratorMode, Writable,
                   WriteBatch, Column, ReadOptions};
 pub use rocksdb_options::{BlockBasedOptions, Options, WriteOptions, IndexType, Cache};

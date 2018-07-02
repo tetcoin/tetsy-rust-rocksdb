@@ -13,7 +13,7 @@
 // limitations under the License.
 //
 extern crate rocksdb;
-use rocksdb::{DB, MergeOperands, Options, Writable};
+use rocksdb::{DB, DBCompressionType, MergeOperands, Options, Writable};
 
 // fn snapshot_test() {
 //    let path = "_rust_rocksdb_iteratortest";
@@ -48,7 +48,9 @@ use rocksdb::{DB, MergeOperands, Options, Writable};
 #[cfg(not(feature = "valgrind"))]
 fn main() {
     let path = "/tmp/rust-rocksdb";
-    let db = DB::open_default(path).unwrap();
+    let mut opts = Options::new();
+    // opts.set_compression_type(DBCompressionType::DBLz4Compression);
+    let db = DB::open(&opts, path).unwrap();
     assert!(db.put(b"my key", b"my value").is_ok());
     match db.get(b"my key") {
         Ok(Some(value)) => {

@@ -19,5 +19,9 @@ libc = "0.2"
 local-encoding = "0.2.0"
 snappy-sys = { git = "https://github.com/paritytech/rust-snappy", branch = "andre/use-cmake" }
 
+[dependencies.lz4-sys]
+git = "https://github.com/busyjay/lz4-rs.git"
+branch = "adjust-build"
+
 [build-dependencies]
 cmake = "0.1"

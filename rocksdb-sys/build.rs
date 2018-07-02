@@ -35,6 +35,7 @@ fn main() {
 	println!("cargo:rustc-link-search=native={}", build.display());
 	println!("cargo:rustc-link-lib=static=rocksdb");
 	println!("cargo:rustc-link-lib=static=snappy");
+	println!("cargo:rustc-link-lib=static=lz4");
 
 	// https://github.com/alexcrichton/cc-rs/blob/ca70fd32c10f8cea805700e944f3a8d1f97d96d4/src/lib.rs#L891
 	if cfg!(any(target_os = "macos", target_os = "freebsd", target_os = "openbsd")) {

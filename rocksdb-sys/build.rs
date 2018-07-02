@@ -9,6 +9,8 @@ fn main() {
 	cfg.define("CMAKE_VERBOSE_MAKEFILE", "ON")
 		.register_dep("SNAPPY")
 		.define("WITH_SNAPPY", "ON")
+		.register_dep("LZ4")
+		.define("WITH_LZ4", "ON")
 		.build_target("rocksdb");
 
 	if cfg!(target_env = "msvc") {

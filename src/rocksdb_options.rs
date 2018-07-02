@@ -355,6 +355,13 @@ impl Options {
         }
     }
 
+    pub fn set_compression_type(&mut self,
+                                        compression_type: rocksdb_ffi::DBCompressionType) {
+        unsafe {
+            rocksdb_ffi::rocksdb_options_set_compression(self.inner, compression_type);
+        }
+    }
+
     pub fn set_block_based_table_factory(&mut self,
                                          factory: &BlockBasedOptions) {
         unsafe {

@@ -5,12 +5,20 @@ use std::env;
 use cmake::Config;
 
 fn main() {
-	let out = Config::new("rocksdb")
-		.define("CMAKE_VERBOSE_MAKEFILE", "ON")
+	let mut cfg = Config::new("rocksdb");
+	cfg.define("CMAKE_VERBOSE_MAKEFILE", "ON")
 		.register_dep("SNAPPY")
 		.define("WITH_SNAPPY", "ON")
-		.build_target("rocksdb")
-		.build();
+		.build_target("rocksdb");
+
+	if cfg!(target_env = "msvc") {
+		cfg.env("SNAPPY_INCLUDE", env::var_os("DEP_SNAPPY_INCLUDE").expect("DEP_SNAPPY_INCLUDE is set in snappy."));
+	} else {
+		cfg.define("SNAPPY_INCLUDE_DIR", env::var_os("DEP_SNAPPY_INCLUDE").expect("DEP_SNAPPY_INCLUDE is set in snappy."))
+			.define("SNAPPY_LIBRARIES", "/dev/null"); // cmake requires defining this but we don't need it
+	}
+
+	let out = cfg.build();
 
 	let mut build = out.join("build");
 

@@ -917,7 +917,18 @@ Status ParseColumnFamilyOption(const std::string& name,
           return Status::InvalidArgument(
               "unable to parse the specified CF option " + name);
         }
+        end = value.find(':', start);
         new_options->compression_opts.max_dict_bytes =
+            ParseInt(value.substr(start, value.size() - start));
+      }
+      // acceleration is optional for backwards compatibility
+      if (end != std::string::npos) {
+        start = end + 1;
+        if (start >= value.size()) {
+          return Status::InvalidArgument(
+              "unable to parse the specified CF option " + name);
+        }
+        new_options->compression_opts.acceleration =
             ParseInt(value.substr(start, value.size() - start));
       }
     } else {

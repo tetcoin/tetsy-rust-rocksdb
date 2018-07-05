@@ -98,6 +98,7 @@ struct CompressionOptions {
   int window_bits;
   int level;
   int strategy;
+  int acceleration;
 
   // Maximum size of dictionaries used to prime the compression library.
   // Enabling dictionary can improve compression ratios when there are
@@ -130,13 +131,16 @@ struct CompressionOptions {
       : window_bits(-14),
         level(kDefaultCompressionLevel),
         strategy(0),
+        acceleration(1),
         max_dict_bytes(0),
         zstd_max_train_bytes(0) {}
-  CompressionOptions(int wbits, int _lev, int _strategy, int _max_dict_bytes,
+  CompressionOptions(int wbits, int _lev, int _strategy, int _acceleration, 
+                     int _max_dict_bytes,
                      int _zstd_max_train_bytes)
       : window_bits(wbits),
         level(_lev),
         strategy(_strategy),
+        acceleration(_acceleration),
         max_dict_bytes(_max_dict_bytes),
         zstd_max_train_bytes(_zstd_max_train_bytes) {}
 };

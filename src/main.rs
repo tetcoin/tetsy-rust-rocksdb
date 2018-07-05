@@ -49,7 +49,8 @@ use rocksdb::{DB, DBCompressionType, MergeOperands, Options, Writable};
 fn main() {
     let path = "/tmp/rust-rocksdb";
     let mut opts = Options::new();
-    // opts.set_compression_type(DBCompressionType::DBLz4Compression);
+    opts.set_compression_type(DBCompressionType::DBSnappyCompression);
+    opts.set_compression_acceleration(1);
     let db = DB::open(&opts, path).unwrap();
     assert!(db.put(b"my key", b"my value").is_ok());
     match db.get(b"my key") {

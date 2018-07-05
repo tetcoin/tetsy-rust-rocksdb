@@ -2200,6 +2200,11 @@ void rocksdb_options_set_compression_options(rocksdb_options_t* opt, int w_bits,
   opt->rep.compression_opts.max_dict_bytes = max_dict_bytes;
 }
 
+void rocksdb_options_set_compression_acceleration(rocksdb_options_t* opt,
+                                                  int acceleration) {
+  opt->rep.compression_opts.acceleration = acceleration;
+}
+
 void rocksdb_options_set_prefix_extractor(
     rocksdb_options_t* opt, rocksdb_slicetransform_t* prefix_extractor) {
   opt->rep.prefix_extractor.reset(prefix_extractor);

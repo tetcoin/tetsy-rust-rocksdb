@@ -362,6 +362,12 @@ impl Options {
         }
     }
 
+    pub fn set_compression_acceleration(&mut self, acceleration: i32) {
+        unsafe {
+            rocksdb_ffi::rocksdb_options_set_compression_acceleration(self.inner, acceleration);
+        }
+    }
+
     pub fn set_block_based_table_factory(&mut self,
                                          factory: &BlockBasedOptions) {
         unsafe {

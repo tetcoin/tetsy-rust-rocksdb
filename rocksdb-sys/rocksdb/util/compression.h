@@ -540,7 +540,7 @@ inline char* BZip2_Uncompress(const char* input_data, size_t input_length,
 // header in varint32 format
 // @param compression_dict Data for presetting the compression library's
 //    dictionary.
-inline bool LZ4_Compress(const CompressionOptions& /*opts*/,
+inline bool LZ4_Compress(const CompressionOptions& opts,
                          uint32_t compress_format_version, const char* input,
                          size_t length, ::std::string* output,
                          const Slice compression_dict = Slice()) {
@@ -567,6 +567,7 @@ inline bool LZ4_Compress(const CompressionOptions& /*opts*/,
   output->resize(static_cast<size_t>(output_header_len + compress_bound));
 
   int outlen;
+  int acceleration = opts.acceleration;
 #if LZ4_VERSION_NUMBER >= 10400  // r124+
   LZ4_stream_t* stream = LZ4_createStream();
   if (compression_dict.size()) {
@@ -576,7 +577,7 @@ inline bool LZ4_Compress(const CompressionOptions& /*opts*/,
 #if LZ4_VERSION_NUMBER >= 10700  // r129+
   outlen = LZ4_compress_fast_continue(
       stream, input, &(*output)[output_header_len], static_cast<int>(length),
-      compress_bound, 1);
+      compress_bound, acceleration);
 #else  // up to r128
   outlen = LZ4_compress_limitedOutput_continue(
       stream, input, &(*output)[output_header_len], static_cast<int>(length),

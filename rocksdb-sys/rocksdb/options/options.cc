@@ -168,6 +168,8 @@ void ColumnFamilyOptions::Dump(Logger* log) const {
         log,
         "        Options.compression_opts.max_dict_bytes: %" ROCKSDB_PRIszt,
         compression_opts.max_dict_bytes);
+    ROCKS_LOG_HEADER(log, "                 Options.compression_opts.acceleration: %d",
+                     compression_opts.acceleration);
     ROCKS_LOG_HEADER(log, "     Options.level0_file_num_compaction_trigger: %d",
                      level0_file_num_compaction_trigger);
     ROCKS_LOG_HEADER(log, "         Options.level0_slowdown_writes_trigger: %d",

@@ -183,6 +183,8 @@ extern "C" {
                                                   bytes: usize,
                                                   a1: i32,
                                                   a2: i32);
+
+    pub fn rocksdb_options_prepare_for_bulk_load(options: DBOptions);
     pub fn rocksdb_options_set_compaction_style(options: DBOptions,
                                                 cs: DBCompactionStyle);
     pub fn rocksdb_options_set_compression(options: DBOptions,
@@ -263,6 +265,18 @@ extern "C" {
                                       -> DBIterator;
     pub fn rocksdb_create_snapshot(db: DBInstance) -> DBSnapshot;
     pub fn rocksdb_release_snapshot(db: DBInstance, snapshot: DBSnapshot);
+
+    pub fn rocksdb_compact_range(db: DBInstance,
+                                 start_key: *const u8,
+                                 start_key_length: size_t,
+                                 limit_key: *const u8,
+                                 limit_key_len: size_t);
+    pub fn rocksdb_compact_range_cf(db: DBInstance,
+                                 column_family: DBCFHandle,
+                                 start_key: *const u8,
+                                 start_key_length: size_t,
+                                 limit_key: *const u8,
+                                 limit_key_len: size_t);
 
     pub fn rocksdb_delete(db: DBInstance,
                           writeopts: DBWriteOptions,

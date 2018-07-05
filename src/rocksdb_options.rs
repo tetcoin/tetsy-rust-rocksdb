@@ -368,6 +368,12 @@ impl Options {
         }
     }
 
+    pub fn prepare_for_bulk_load(&mut self) {
+        unsafe {
+            rocksdb_ffi::rocksdb_options_prepare_for_bulk_load(self.inner);
+        }
+    }
+
     pub fn set_block_based_table_factory(&mut self,
                                          factory: &BlockBasedOptions) {
         unsafe {

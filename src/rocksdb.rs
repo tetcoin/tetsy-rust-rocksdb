@@ -778,6 +778,35 @@ impl DB {
             Ok(())
         }
     }
+
+    pub fn compact_range(&self,
+                         start_key: &[u8],
+                         start_key_length: size_t,
+                         limit_key: &[u8],
+                         limit_key_length: size_t) {
+        unsafe {
+            rocksdb_ffi::rocksdb_compact_range(self.inner,
+                                               start_key.as_ptr(),
+                                               start_key_length,
+                                               limit_key.as_ptr(),
+                                               limit_key_length);
+        }
+    }
+    pub fn compact_cf_range(&self,
+                         cf: Column,
+                         start_key: &[u8],
+                         start_key_length: size_t,
+                         limit_key: &[u8],
+                         limit_key_length: size_t) {
+        unsafe {
+            rocksdb_ffi::rocksdb_compact_range_cf(self.inner,
+                                               cf.inner,
+                                               start_key.as_ptr(),
+                                               start_key_length,
+                                               limit_key.as_ptr(),
+                                               limit_key_length);
+        }
+    }
 }
 
 impl Writable for DB {

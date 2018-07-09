@@ -18,6 +18,7 @@ extern crate libc;
 use std::collections::BTreeMap;
 use std::ffi::CString;
 use std::fs;
+use std::ptr;
 use std::ops::Deref;
 use std::path::Path;
 use std::slice;
@@ -780,31 +781,33 @@ impl DB {
     }
 
     pub fn compact_range(&self,
-                         start_key: &[u8],
-                         start_key_length: size_t,
-                         limit_key: &[u8],
-                         limit_key_length: size_t) {
+                         start_key: Option<&[u8]>,
+                         end_key: Option<&[u8]>) {
         unsafe {
+            let (start, s_len) = start_key.map_or((ptr::null(), 0), |k| (k.as_ptr(), k.len()));
+            let (end, e_len) = end_key.map_or((ptr::null(), 0), |k| (k.as_ptr(), k.len()));
+
             rocksdb_ffi::rocksdb_compact_range(self.inner,
-                                               start_key.as_ptr(),
-                                               start_key_length,
-                                               limit_key.as_ptr(),
-                                               limit_key_length);
+                                               start,
+                                               s_len,
+                                               end,
+                                               e_len);
         }
     }
     pub fn compact_cf_range(&self,
                          cf: Column,
-                         start_key: &[u8],
-                         start_key_length: size_t,
-                         limit_key: &[u8],
-                         limit_key_length: size_t) {
+                         start_key: Option<&[u8]>,
+                         end_key: Option<&[u8]>) {
         unsafe {
+            let (start, s_len) = start_key.map_or((ptr::null(), 0), |k| (k.as_ptr(), k.len()));
+            let (end, e_len) = end_key.map_or((ptr::null(), 0), |k| (k.as_ptr(), k.len()));
+
             rocksdb_ffi::rocksdb_compact_range_cf(self.inner,
                                                cf.inner,
-                                               start_key.as_ptr(),
-                                               start_key_length,
-                                               limit_key.as_ptr(),
-                                               limit_key_length);
+                                               start,
+                                               s_len,
+                                               end,
+                                               e_len);
         }
     }
 }

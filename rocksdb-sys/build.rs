@@ -18,11 +18,6 @@ fn main() {
     let target_os = env::var("CARGO_CFG_TARGET_OS").expect("CARGO_CFG_TARGET_OS is set by cargo.");
     let target_env = env::var("CARGO_CFG_TARGET_ENV").expect("CARGO_CFG_TARGET_ENV is set by cargo.");
 
-    if target_os.contains("android") {
-        // when cross-compiling CMAKE_SYSTEM_NAME is set to the host OS
-        cfg.define("CMAKE_SYSTEM_NAME", "Android");
-    }
-
     if target_env.contains("msvc") {
         cfg.env("SNAPPY_INCLUDE", snappy);
 

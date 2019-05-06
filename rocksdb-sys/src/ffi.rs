@@ -14,8 +14,6 @@
 //
 
 use std::ffi::CStr;
-#[cfg(test)]
-use std::ffi::CString;
 
 use libc;
 use libc::{c_char, c_uchar, c_int, c_void, size_t};

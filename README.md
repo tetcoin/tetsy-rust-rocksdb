@@ -1,4 +1,4 @@
-rust-rocksdb
+tetsy-rust-rocksdb
 ============
 
 

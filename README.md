@@ -25,7 +25,7 @@ This fork adds the following features:
   - [ ] slicetransform
   - [ ] windows support
 
-Feedback and pull requests welcome!  If a particular feature of RocksDB is important to you, please let us know by [opening an issue](https://github.com/paritytech/rust-rocksdb/issues/new), and we'll prioritize it.
+Feedback and pull requests welcome!  If a particular feature of RocksDB is important to you, please let us know by [opening an issue](https://github.com/tetcoin/tetsy-rust-rocksdb/issues/new), and we'll prioritize it.
 
 ###### Prerequisite: Snappy
 

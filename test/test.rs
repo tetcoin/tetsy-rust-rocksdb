@@ -1,4 +1,4 @@
-extern crate parity_rocksdb;
+extern crate tetsy_rocksdb;
 
 mod test_iterator;
 mod test_multithreaded;

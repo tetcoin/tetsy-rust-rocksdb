@@ -1,11 +1,11 @@
 [package]
-name = "parity-rocksdb"
+name = "tetsy-rocksdb"
 description = "A Rust wrapper for Facebook's RocksDB embeddable database."
 version = "0.5.1"
 authors = ["Tyler Neely <t@jujit.su>", "David Greenberg <dsg123456789@gmail.com>", "Parity Technologies <admin@parity.io>"]
 license = "Apache-2.0"
 keywords = ["database", "embedded", "LSM-tree", "persistence"]
-homepage = "https://github.com/paritytech/rust-rocksdb"
+homepage = "https://github.com/tetcoin/tetsy-rust-rocksdb"
 exclude = [
   ".appveyor.yml",
   ".gitignore",
@@ -19,7 +19,7 @@ path = "test/test.rs"
 
 [dependencies]
 libc = "0.2"
-parity-rocksdb-sys = { path = "rocksdb-sys", version = "0.5" }
+tetsy-rocksdb-sys = { path = "rocksdb-sys", version = "0.5" }
 local-encoding = "0.2.0"
 
 [dev-dependencies]

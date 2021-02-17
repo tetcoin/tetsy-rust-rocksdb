@@ -43,7 +43,7 @@ fn main() {
     }
 
     // Added to support old CPUs
-    // see https://github.com/paritytech/parity-ethereum/issues/9684
+    // see https://github.com/tetcoin/tetsy-vapory/issues/9684
     let portable = match &*env::var("PORTABLE").unwrap_or("ON".to_owned()) {
         "OFF" => false,
         _ => true,

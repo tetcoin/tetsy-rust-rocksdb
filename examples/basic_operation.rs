@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-extern crate parity_rocksdb as rocksdb;
+extern crate tetsy_rocksdb as rocksdb;
 use rocksdb::{DB, MergeOperands, Options, Writable};
 
 fn main() {

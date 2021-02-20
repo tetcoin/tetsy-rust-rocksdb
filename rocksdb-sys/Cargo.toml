@@ -1,11 +1,11 @@
 [package]
-name = "parity-rocksdb-sys"
+name = "tetsy-rocksdb-sys"
 version = "0.5.2"
 authors = ["Tyler Neely <t@jujit.su>", "David Greenberg <dsg123456789@gmail.com>", "Parity Technologies <admin@parity.io>"]
 license = "MIT/Apache-2.0/BSD-3-Clause"
 description = "Native bindings to librocksdb"
 readme = "README.md"
-repository = "https://github.com/paritytech/rust-rocksdb.git"
+repository = "https://github.com/tetcoinn/tetsy-rust-rocksdb.git"
 keywords = ["ffi", "rocksdb"]
 
 build = "build.rs"
@@ -17,7 +17,7 @@ default = []
 [dependencies]
 libc = "0.2"
 local-encoding = "0.2.0"
-parity-snappy-sys = "0.1"
+tetsy-snappy-sys = "0.1.0"
 
 [build-dependencies]
 cmake = "0.1"
